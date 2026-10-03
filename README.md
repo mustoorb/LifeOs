@@ -9,9 +9,10 @@ open decisions are in [`docs/decisions.md`](docs/decisions.md).
 
 ## What's here
 
-The repository holds the **domain core** and the **macOS desktop companion**. The core is
-pure, dependency-free TypeScript that implements the blueprint's evidence pipeline and game
-rules. There is no server or database yet.
+The repository holds the **domain core**, the **macOS desktop companion** and the
+**account service**. The core is pure, dependency-free TypeScript that implements the
+blueprint's evidence pipeline and game rules. The companion and the service both build on
+it.
 
 ```
 packages/
@@ -20,6 +21,7 @@ packages/
   eclipse/     Life RPG layer
 apps/
   companion/   macOS menu-bar companion (Electron + a Swift helper), see its README
+  server/      Accounts, access codes, seasons, consent and activity upload (Hono + PostgreSQL)
 test/          End-to-end daily-loop test spanning both layers
 ```
 
@@ -64,12 +66,17 @@ npm run check      # typecheck + tests
 npm test           # tests only
 ```
 
-For the desktop companion, see [`apps/companion/README.md`](apps/companion/README.md).
+The server's integration tests need PostgreSQL. Set
+`TEST_DATABASE_URL=postgres://postgres:postgres@127.0.0.1:5432/postgres` to run them;
+without it they are skipped.
+
+For the apps, see [`apps/companion/README.md`](apps/companion/README.md) and
+[`apps/server/README.md`](apps/server/README.md).
 
 ## Next steps (blueprint §21)
 
-1. Account and access-code service with persistence and an admin console for invite issuance and season configuration. The companion's export already produces the events it will accept.
-2. Signing and notarization of the companion, and an opt-in launch-at-login.
-3. ECLIPSE home: today's quests, the correction queue, XP explanations and a private weekly recap.
+1. Choose an email provider so the server can run in production, then deploy it for the founding cohort.
+2. Companion sign-in and upload, replacing the export file. Signing and notarization, and an opt-in launch-at-login.
+3. ECLIPSE home: today's quests, the correction queue, XP explanations and a private weekly recap, served from stored activity.
 4. Friends and invite-only groups, plus the friend leaderboard.
 5. Instrumentation for the north-star metric, the **Weekly Meaningful Progress Rate**.

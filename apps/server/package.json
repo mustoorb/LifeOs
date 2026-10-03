@@ -1,0 +1,25 @@
+{
+  "name": "@lifeos/server",
+  "version": "0.1.0",
+  "private": true,
+  "description": "ECLIPSE account, access-code and season service, plus PROMETHEE desktop ingestion",
+  "type": "module",
+  "scripts": {
+    "build": "node build.mjs",
+    "start": "node dist/server.js",
+    "cli": "node dist/cli.js"
+  },
+  "dependencies": {
+    "@hono/node-server": "^2.1.3",
+    "hono": "^4.13.12",
+    "pg": "^8.23.1",
+    "zod": "^4.6.5"
+  },
+  "devDependencies": {
+    "@lifeos/contracts": "*",
+    "@lifeos/eclipse": "*",
+    "@lifeos/promethee": "*",
+    "@types/pg": "^8.23.1",
+    "esbuild": "^0.28.2"
+  }
+}

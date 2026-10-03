@@ -1,4 +1,5 @@
 import { serve } from '@hono/node-server';
+import { fileURLToPath } from 'node:url';
 import { ConfigError, loadConfig } from './config.js';
 import { createPool, migrate } from './db.js';
 import { createApp, createServices } from './http.js';
@@ -12,7 +13,9 @@ async function main(): Promise<void> {
 
   const now = () => Date.now();
   const services = createServices({ db, mailer: new ConsoleMailer(), secret: config.secret, now });
-  const app = createApp(services, { trustProxy: config.trustProxy, now });
+  // The web client is built next to the server (apps/web/dist); override with LIFEOS_WEB_DIR.
+  const webDir = process.env.LIFEOS_WEB_DIR ?? fileURLToPath(new URL('../../web/dist/', import.meta.url));
+  const app = createApp(services, { trustProxy: config.trustProxy, now, secureCookies: config.production, webDir });
   const server = serve({ fetch: app.fetch, port: config.port, hostname: config.host }, (info) => {
     console.log(`[server] listening on http://${info.address}:${info.port}`);
   });

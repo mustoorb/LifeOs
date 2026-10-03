@@ -52,6 +52,30 @@ Errors look like `{ "error": { "code": "...", "message": "..." } }`. Signed-in r
 | `GET/DELETE /v1/me/activity?from&to` | List events starting in the range, or delete every event that overlaps it. |
 | `/v1/admin/access-codes`, `/v1/admin/seasons`, `/v1/admin/accounts`, `/v1/admin/audit` | Admin only. |
 
+## ECLIPSE home
+
+The game runs on the server, so every client sees the same state. `GameEngine.refresh`
+(`src/game.ts`) is idempotent and serialized per account. It runs after uploads, deletions,
+manual logs and corrections, and on each home or recap request. Each run:
+
+1. Re-derives the last 35 days of activity from stored events with `@lifeos/promethee` (deduplication, then the member's corrections, then anomaly checks).
+2. Reconciles the XP ledger with `@lifeos/eclipse`. If an activity changed, its award is reversed and recomputed; if the activity is gone, its award is reversed. Awards are never edited except to be reversed, and each one keeps its explanation lines.
+3. Creates today's focus quest and this week's movement and recovery quests in the member's time zone, then awards or withdraws quest bonuses.
+
+| Route | Purpose |
+|---|---|
+| `GET /v1/home?tz=` | Level and skills, today's priorities, quests, activity with XP explanations, the review queue, recent XP, the season |
+| `POST /v1/me/activities/:id/correction` `{kind: confirm \| discard \| recategorize, type?}` | Corrections. They are anchored to a source event, so they survive re-derivation. |
+| `POST /v1/me/activity/manual` | Self-reported workouts and sessions. They earn provisional XP and never count toward rankings. |
+| `POST/PATCH/DELETE /v1/me/priorities` | Up to 3 per local day |
+| `POST /v1/me/quests/:id/skip` | Skip an open quest |
+| `GET /v1/recap?week=&tz=`, `PUT /v1/recap/:week/feedback` `{accurate}` | The private weekly recap, and "did this represent your week?" |
+
+The web client (`apps/web`) is served at `/` when it has been built. It signs in with an
+HttpOnly, SameSite=Strict cookie that page scripts can't read. Cookie-authenticated writes
+must also carry `X-LifeOS-Client: web`, which blocks cross-site request forgery. The page has
+a strict CSP and no third-party resources.
+
 ## Security and privacy
 
 - **Passwordless sign-in.** Codes are stored as HMAC-SHA256, expire after 10 minutes and allow 5 attempts. One email can receive at most 5 codes an hour, and each IP is limited too.
@@ -67,6 +91,7 @@ Errors look like `{ "error": { "code": "...", "message": "..." } }`. Signed-in r
 - **A real mailer.** The server refuses to start with `NODE_ENV=production` until one exists, because the development mailer prints codes to the log. Picking a provider is an open decision.
 - **Shared rate limiting.** The limiter is in memory, which is correct for one instance only.
 - **An admin web console.** Admin work currently goes through the CLI or the admin API.
+- **Background refresh.** Game state refreshes on requests and uploads, not on a schedule. A quest that ends while nobody looks is settled on the next visit, which is correct but late.
 
 ## Tests
 

@@ -9,8 +9,8 @@ open decisions are in [`docs/decisions.md`](docs/decisions.md).
 
 ## What's here
 
-The repository holds the **domain core**, the **macOS desktop companion** and the
-**account service**. The core is pure, dependency-free TypeScript that implements the
+The repository holds the **domain core**, the **macOS desktop companion**, the **account
+service** and the **ECLIPSE home** web client. The core is pure, dependency-free TypeScript that implements the
 blueprint's evidence pipeline and game rules. The companion and the service both build on
 it.
 
@@ -21,7 +21,8 @@ packages/
   eclipse/     Life RPG layer
 apps/
   companion/   macOS menu-bar companion (Electron + a Swift helper), see its README
-  server/      Accounts, access codes, seasons, consent and activity upload (Hono + PostgreSQL)
+  server/      Accounts, codes, seasons, upload and the ECLIPSE game engine (Hono + PostgreSQL)
+  web/         ECLIPSE home: today, quests, review queue, XP explanations, weekly recap
 test/          End-to-end daily-loop test spanning both layers
 ```
 
@@ -75,8 +76,7 @@ For the apps, see [`apps/companion/README.md`](apps/companion/README.md) and
 
 ## Next steps (blueprint §21)
 
-1. Choose an email provider so the server can run in production, then deploy it for the founding cohort.
-2. Companion signing and notarization, and an opt-in launch-at-login.
-3. ECLIPSE home: today's quests, the correction queue, XP explanations and a private weekly recap, served from stored activity.
-4. Friends and invite-only groups, plus the friend leaderboard.
-5. Instrumentation for the north-star metric, the **Weekly Meaningful Progress Rate**.
+1. Choose an email provider and deploy the server and web client for the founding cohort.
+2. Companion signing and notarization, an opt-in launch-at-login, and a link from the companion to the home.
+3. Friends and invite-only groups, plus the friend leaderboard.
+4. Instrumentation for the north-star metric, the **Weekly Meaningful Progress Rate**. The two inputs exist now: completed quests and recap feedback.

@@ -214,6 +214,18 @@ export class AccountService {
       sessions,
       invites: await this.listInvites(accountId),
       activityEvents: events.rows.map((row) => row.event),
+      ...(await this.gameData(accountId)),
+    };
+  }
+
+  private async gameData(accountId: string): Promise<Record<string, unknown>> {
+    const rows = async (sql: string) => (await this.db.query(sql, [accountId])).rows;
+    return {
+      corrections: await rows('SELECT event_id, correction, at FROM activity_corrections WHERE account_id = $1 ORDER BY id'),
+      awards: (await rows('SELECT award FROM game_awards WHERE account_id = $1 ORDER BY created_at')).map((r) => r.award),
+      quests: await rows('SELECT id, template, starts_at, ends_at, skipped_at FROM quests WHERE account_id = $1 ORDER BY starts_at'),
+      priorities: await rows('SELECT local_date, text, skill, done_at, created_at FROM priorities WHERE account_id = $1 ORDER BY created_at'),
+      recapFeedback: await rows('SELECT week_start, accurate, at FROM recap_feedback WHERE account_id = $1 ORDER BY week_start'),
     };
   }
 

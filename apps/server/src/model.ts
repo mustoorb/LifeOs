@@ -26,6 +26,7 @@ export interface Account {
   readonly campaign: string;
   readonly termsVersion: string;
   readonly privacy: PrivacySettings;
+  readonly timeZone: string;
   readonly createdAt: number;
 }
 
@@ -38,10 +39,11 @@ export interface AccountRow {
   campaign: string;
   terms_version: string;
   privacy: unknown;
+  time_zone: string;
   created_at: Date;
 }
 
-export const ACCOUNT_COLUMNS = 'id, email, display_name, role, region, campaign, terms_version, privacy, created_at';
+export const ACCOUNT_COLUMNS = 'id, email, display_name, role, region, campaign, terms_version, privacy, time_zone, created_at';
 
 export function toAccount(row: AccountRow): Account {
   const privacy = PrivacySettings.safeParse(row.privacy);
@@ -54,6 +56,7 @@ export function toAccount(row: AccountRow): Account {
     campaign: row.campaign,
     termsVersion: row.terms_version,
     privacy: privacy.success ? privacy.data : DEFAULT_PRIVACY,
+    timeZone: row.time_zone,
     createdAt: row.created_at.getTime(),
   };
 }
@@ -85,4 +88,14 @@ export function ageOn(birthDate: string, now: number): number {
     (today.getUTCMonth() === date.getUTCMonth() && today.getUTCDate() < date.getUTCDate());
   if (beforeBirthday) age--;
   return age;
+}
+
+export function isTimeZone(value: string): boolean {
+  if (value.length > 64) return false;
+  try {
+    new Intl.DateTimeFormat('en-US', { timeZone: value });
+    return true;
+  } catch {
+    return false;
+  }
 }

@@ -20,12 +20,16 @@ export interface Harness {
   readonly clock: { now: number };
   /** The app as a fetch function, for clients under test (e.g. the companion). */
   readonly fetch: (input: string, init?: RequestInit) => Promise<Response>;
-  request(method: string, path: string, options?: { body?: unknown; token?: string; raw?: string }): Promise<Response>;
-  json<T = any>(method: string, path: string, options?: { body?: unknown; token?: string }): Promise<{ status: number; body: T }>;
+  request(
+    method: string,
+    path: string,
+    options?: { body?: unknown; token?: string; raw?: string; headers?: Record<string, string> },
+  ): Promise<Response>;
+  json<T = any>(method: string, path: string, options?: { body?: unknown; token?: string; headers?: Record<string, string> }): Promise<{ status: number; body: T }>;
   close(): Promise<void>;
 }
 
-export async function createHarness(): Promise<Harness> {
+export async function createHarness(options: { webDir?: string } = {}): Promise<Harness> {
   const name = `lifeos_test_${randomBytes(6).toString('hex')}`;
   const adminPool = new pg.Pool({ connectionString: TEST_DATABASE_URL, max: 1 });
   await adminPool.query(`CREATE DATABASE ${name}`);
@@ -38,10 +42,10 @@ export async function createHarness(): Promise<Harness> {
   const now = () => clock.now;
   const mailer = new MemoryMailer();
   const services = createServices({ db, mailer, secret: 'test-secret-that-is-at-least-32-characters', now });
-  const app = createApp(services, { trustProxy: false, now });
+  const app = createApp(services, { trustProxy: false, now, ...(options.webDir ? { webDir: options.webDir } : {}) });
 
   const request: Harness['request'] = (method, path, options = {}) => {
-    const headers: Record<string, string> = {};
+    const headers: Record<string, string> = { ...options.headers };
     if (options.token) headers.authorization = `Bearer ${options.token}`;
     if (options.body !== undefined || options.raw !== undefined) headers['content-type'] = 'application/json';
     return Promise.resolve(

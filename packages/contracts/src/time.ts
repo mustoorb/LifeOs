@@ -100,3 +100,27 @@ export function localDayWindow(dateKey: string, timeZone: string): Interval {
   const nextKey = localDateKey(start + 36 * HOUR, timeZone);
   return { start, end: startOfLocalDay(nextKey, timeZone) };
 }
+
+function parseDateKey(dateKey: string): Date {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(dateKey);
+  if (!match) throw new Error(`Invalid date key "${dateKey}"`);
+  return new Date(Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3])));
+}
+
+/** Calendar arithmetic on `YYYY-MM-DD` keys; independent of time zones. */
+export function addDays(dateKey: string, days: number): string {
+  const date = parseDateKey(dateKey);
+  date.setUTCDate(date.getUTCDate() + days);
+  return date.toISOString().slice(0, 10);
+}
+
+/** The Monday that starts the ISO week containing `dateKey`. */
+export function weekStartKey(dateKey: string): string {
+  const weekday = (parseDateKey(dateKey).getUTCDay() + 6) % 7; // Monday = 0
+  return addDays(dateKey, -weekday);
+}
+
+/** Monday 00:00 to the next Monday 00:00 in `timeZone`. */
+export function localWeekWindow(weekStart: string, timeZone: string): Interval {
+  return { start: startOfLocalDay(weekStart, timeZone), end: startOfLocalDay(addDays(weekStart, 7), timeZone) };
+}

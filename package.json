@@ -7,7 +7,7 @@
     "apps/*"
   ],
   "scripts": {
-    "typecheck": "tsc -p tsconfig.json && tsc -p apps/companion/tsconfig.json && tsc -p apps/companion/tsconfig.renderer.json && tsc -p apps/server/tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json && tsc -p apps/companion/tsconfig.json && tsc -p apps/companion/tsconfig.renderer.json && tsc -p apps/server/tsconfig.json && tsc -p apps/web/tsconfig.json",
     "test": "vitest run",
     "check": "npm run typecheck && npm run test"
   },

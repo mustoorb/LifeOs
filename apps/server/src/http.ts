@@ -1,15 +1,21 @@
 import { CONSENT_SCOPES } from '@lifeos/promethee';
 import type { IncomingMessage } from 'node:http';
 import { Hono, type Context } from 'hono';
+import { deleteCookie, getCookie, setCookie } from 'hono/cookie';
 import { bodyLimit } from 'hono/body-limit';
 import { secureHeaders } from 'hono/secure-headers';
 import { z } from 'zod';
 import { AccountService } from './accounts.js';
 import { ActivityService, DesktopUpload } from './activity.js';
 import { AdminService } from './admin.js';
-import { AuthService, type Authenticated } from './auth.js';
+import { AuthService, SESSION_TTL, type Authenticated } from './auth.js';
+import { GameEngine } from './game.js';
+import { HomeService, MANUAL_TYPES } from './home.js';
 import type { Db } from './db.js';
 import { PRIVACY_POLICY_VERSION, PrivacySettings, TERMS_VERSION } from './model.js';
+import { SKILLS, type SkillId } from '@lifeos/eclipse';
+import { ACTIVITY_TYPES } from '@lifeos/contracts';
+import { readWebAssets, type WebAssets } from './web.js';
 import { AppError, RateLimiter, forbidden, type Actor, type Mailer } from './support.js';
 
 const HOUR = 60 * 60_000;
@@ -19,16 +25,21 @@ export interface Services {
   readonly accounts: AccountService;
   readonly admin: AdminService;
   readonly activity: ActivityService;
+  readonly game: GameEngine;
+  readonly home: HomeService;
 }
 
 export function createServices(deps: { db: Db; mailer: Mailer; secret: string; now: () => number }): Services {
   const auth = new AuthService(deps);
   const accounts = new AccountService(deps.db, auth, deps.now);
+  const game = new GameEngine(deps.db, deps.now);
   return {
     auth,
     accounts,
     admin: new AdminService(deps.db, deps.now),
     activity: new ActivityService(deps.db, accounts, deps.now),
+    game,
+    home: new HomeService(deps.db, game, deps.now),
   };
 }
 
@@ -83,6 +94,26 @@ const CreateSeason = z.object({
   xpRulesetVersion: z.string().min(1).max(40),
 });
 const SetRole = z.object({ role: z.enum(['member', 'admin']) });
+const Correct = z.discriminatedUnion('kind', [
+  z.object({ kind: z.literal('confirm') }),
+  z.object({ kind: z.literal('discard') }),
+  z.object({ kind: z.literal('recategorize'), type: z.enum(ACTIVITY_TYPES) }),
+]);
+const ManualLog = z.object({
+  type: z.enum(MANUAL_TYPES),
+  start: instant,
+  end: instant,
+  distanceM: z.number().nonnegative().max(1_000_000).optional(),
+});
+const AddPriority = z.object({ text: text(120), skill: z.enum(SKILLS as [SkillId, ...SkillId[]]).nullable().default(null) });
+const SetDone = z.object({ done: z.boolean() });
+const WeekQuery = z.object({ week: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(), tz: z.string().max(64).optional() });
+const Feedback = z.object({ accurate: z.boolean() });
+
+/** The web client's session cookie: HttpOnly, never readable by page scripts. */
+export const SESSION_COOKIE = 'lifeos_session';
+/** Header the web client sends; cross-site forms can't, so it blocks CSRF on cookie-authenticated writes. */
+export const CLIENT_HEADER = 'x-lifeos-client';
 
 function parse<T extends z.ZodType>(schema: T, value: unknown): z.infer<T> {
   const result = schema.safeParse(value);
@@ -109,10 +140,28 @@ type Env = {
 export interface HttpOptions {
   readonly trustProxy: boolean;
   readonly now: () => number;
+  /** Mark cookies Secure (HTTPS deployments). */
+  readonly secureCookies?: boolean;
+  /** Built web client to serve at `/`, if any. */
+  readonly webDir?: string;
 }
 
 export function createApp(services: Services, options: HttpOptions): Hono<Env> {
-  const { auth, accounts, admin, activity } = services;
+  const { auth, accounts, admin, activity, game, home } = services;
+  const web: WebAssets | null = options.webDir ? readWebAssets(options.webDir) : null;
+  const isWeb = (c: Context<Env>) => c.req.header(CLIENT_HEADER) === 'web';
+  /** Web sign-ins get the token as a cookie instead of in the body. */
+  const signedIn = (c: Context<Env>, token: string, account: unknown, status: 200 | 201) => {
+    if (!isWeb(c)) return c.json({ status: 'signed_in', token, account }, status);
+    setCookie(c, SESSION_COOKIE, token, {
+      httpOnly: true,
+      sameSite: 'Strict',
+      secure: options.secureCookies ?? false,
+      path: '/',
+      maxAge: Math.floor(SESSION_TTL / 1000),
+    });
+    return c.json({ status: 'signed_in', account }, status);
+  };
   const app = new Hono<Env>();
   const signInStarts = new RateLimiter(20, HOUR, options.now);
   const signInVerifies = new RateLimiter(60, HOUR, options.now);
@@ -154,20 +203,36 @@ export function createApp(services: Services, options: HttpOptions): Hono<Env> {
     const input = parse(VerifySignIn, await body(c));
     const result = await auth.verify(input.email, input.code, input.deviceLabel);
     return result.kind === 'session'
-      ? c.json({ status: 'signed_in', token: result.token, account: result.account })
+      ? signedIn(c, result.token, result.account, 200)
       : c.json({ status: 'registration_required', registrationToken: result.registrationToken, termsVersion: TERMS_VERSION });
   });
 
   app.post('/v1/accounts', async (c) => {
     registrations.hit(clientIp(c));
     const result = await accounts.register(parse(Register, await body(c)));
-    return c.json({ status: 'signed_in', ...result }, 201);
+    return signedIn(c, result.token, result.account, 201);
+  });
+
+  // Lets the web client ask "am I signed in?" without provoking a 401.
+  app.get('/v1/auth/session', async (c) => {
+    const token = c.req.header('authorization')?.replace(/^Bearer /, '') || getCookie(c, SESSION_COOKIE);
+    try {
+      const { account } = await auth.authenticate(token);
+      return c.json({ signedIn: true, displayName: account.displayName });
+    } catch {
+      return c.json({ signedIn: false });
+    }
   });
 
   // --- signed in ---
   const requireAuth = async (c: Context<Env>, next: () => Promise<void>) => {
     const header = c.req.header('authorization');
-    const token = header?.startsWith('Bearer ') ? header.slice(7) : undefined;
+    let token = header?.startsWith('Bearer ') ? header.slice(7) : undefined;
+    if (!token) {
+      token = getCookie(c, SESSION_COOKIE);
+      const safe = c.req.method === 'GET' || c.req.method === 'HEAD';
+      if (token && !safe && !isWeb(c)) throw new AppError(403, 'csrf', 'Missing client header');
+    }
     c.set('auth', await auth.authenticate(token));
     await next();
   };
@@ -179,12 +244,16 @@ export function createApp(services: Services, options: HttpOptions): Hono<Env> {
   app.use('/v1/me', requireAuth);
   app.use('/v1/me/*', requireAuth);
   app.use('/v1/admin/*', requireAuth, requireAdmin);
+  app.use('/v1/home', requireAuth);
+  app.use('/v1/recap', requireAuth);
+  app.use('/v1/recap/*', requireAuth);
 
   const accountId = (c: Context<Env>) => c.var.auth.account.id;
   const actorOf = (c: Context<Env>): Actor => ({ kind: 'account', id: accountId(c) });
 
   app.post('/v1/auth/logout', async (c) => {
     await auth.revokeSession(accountId(c), c.var.auth.sessionId);
+    deleteCookie(c, SESSION_COOKIE, { path: '/' });
     return c.body(null, 204);
   });
   app.get('/v1/me', async (c) => c.json(await accounts.profile(accountId(c))));
@@ -218,15 +287,85 @@ export function createApp(services: Services, options: HttpOptions): Hono<Env> {
   });
   app.get('/v1/me/invites', async (c) => c.json(await accounts.listInvites(accountId(c))));
   app.post('/v1/me/invites', async (c) => c.json(await accounts.issueInvite(c.var.auth.account), 201));
-  app.post('/v1/me/activity/desktop', async (c) => c.json(await activity.ingestDesktop(c.var.auth.account, parse(DesktopUpload, await body(c)))));
+  app.post('/v1/me/activity/desktop', async (c) => {
+    const result = await activity.ingestDesktop(c.var.auth.account, parse(DesktopUpload, await body(c)));
+    if (result.accepted > 0) await game.refresh(accountId(c));
+    return c.json(result);
+  });
   app.get('/v1/me/activity', async (c) => {
     const range = parse(Range, c.req.query());
     return c.json(await activity.list(accountId(c), range.from, range.to));
   });
   app.delete('/v1/me/activity', async (c) => {
     const range = parse(Range, c.req.query());
-    return c.json({ deleted: await activity.deleteRange(accountId(c), range.from, range.to) });
+    const deleted = await activity.deleteRange(accountId(c), range.from, range.to);
+    if (deleted > 0) await game.refresh(accountId(c));
+    return c.json({ deleted });
   });
+
+  // --- ECLIPSE home ---
+  app.get('/v1/home', async (c) => {
+    const { tz } = parse(WeekQuery, c.req.query());
+    return c.json(await home.home(await home.useTimeZone(c.var.auth.account, tz)));
+  });
+  app.post('/v1/me/activities/:id/correction', async (c) => {
+    await home.correct(c.var.auth.account, c.req.param('id'), parse(Correct, await body(c)));
+    return c.body(null, 204);
+  });
+  app.post('/v1/me/activity/manual', async (c) => {
+    const input = parse(ManualLog, await body(c));
+    await home.logManual(c.var.auth.account, {
+      type: input.type,
+      start: input.start,
+      end: input.end,
+      ...(input.distanceM !== undefined ? { distanceM: input.distanceM } : {}),
+    });
+    return c.body(null, 201);
+  });
+  app.post('/v1/me/priorities', async (c) => {
+    const input = parse(AddPriority, await body(c));
+    await home.addPriority(c.var.auth.account, input.text, input.skill);
+    return c.body(null, 201);
+  });
+  app.patch('/v1/me/priorities/:id', async (c) => {
+    const id = c.req.param('id');
+    if (!z.uuid().safeParse(id).success) throw new AppError(404, 'not_found', 'Priority not found');
+    await home.setPriorityDone(accountId(c), id, parse(SetDone, await body(c)).done);
+    return c.body(null, 204);
+  });
+  app.delete('/v1/me/priorities/:id', async (c) => {
+    const id = c.req.param('id');
+    if (!z.uuid().safeParse(id).success) throw new AppError(404, 'not_found', 'Priority not found');
+    await home.deletePriority(accountId(c), id);
+    return c.body(null, 204);
+  });
+  app.post('/v1/me/quests/:id/skip', async (c) => {
+    await home.skipQuest(c.var.auth.account, c.req.param('id'));
+    return c.body(null, 204);
+  });
+  app.get('/v1/recap', async (c) => {
+    const query = parse(WeekQuery, c.req.query());
+    const account = await home.useTimeZone(c.var.auth.account, query.tz);
+    return c.json(await home.recap(account, query.week));
+  });
+  app.put('/v1/recap/:week/feedback', async (c) => {
+    const week = c.req.param('week');
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(week)) throw new AppError(404, 'not_found', 'Week not found');
+    await home.recapFeedback(c.var.auth.account, week, parse(Feedback, await body(c)).accurate);
+    return c.body(null, 204);
+  });
+
+  // --- web client ---
+  if (web) {
+    for (const [path, asset] of web.files) {
+      app.get(path, (c) => {
+        c.header('content-type', asset.type);
+        c.header('cache-control', path === '/' ? 'no-cache' : 'public, max-age=300');
+        if (asset.type.startsWith('text/html')) c.header('content-security-policy', web.csp);
+        return c.body(asset.body);
+      });
+    }
+  }
 
   // --- admin ---
   app.get('/v1/admin/access-codes', async (c) => c.json(await admin.listCodes(c.req.query('campaign'))));

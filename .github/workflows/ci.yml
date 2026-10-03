@@ -33,6 +33,7 @@ jobs:
         run: npx vitest run apps/server test --reporter=verbose | tee db-tests.txt && ! grep -q "skipped" db-tests.txt
       - run: npm run build -w @lifeos/companion
       - run: npm run build -w @lifeos/server
+      - run: npm run build -w @lifeos/web
 
   companion-macos:
     runs-on: macos-latest

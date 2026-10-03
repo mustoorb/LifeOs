@@ -6,7 +6,10 @@ export type Tx = pg.PoolClient;
 export type Queryable = Pick<pg.Pool, 'query'>;
 
 export function createPool(connectionString: string): Db {
-  return new pg.Pool({ connectionString, max: 10 });
+  const pool = new pg.Pool({ connectionString, max: 10 });
+  // An idle connection dropped by the server (restart, failover) must not crash the process.
+  pool.on('error', (error) => console.error('[db] idle connection error:', error.message));
+  return pool;
 }
 
 export async function transaction<T>(db: Db, work: (tx: Tx) => Promise<T>): Promise<T> {
@@ -151,6 +154,82 @@ export const MIGRATIONS: readonly { readonly id: number; readonly name: string; 
         action text NOT NULL,
         target text,
         details jsonb NOT NULL DEFAULT '{}'
+      );
+    `,
+  },
+  {
+    id: 2,
+    name: 'ECLIPSE home: activities, corrections, awards, quests, priorities, recaps',
+    sql: `
+      -- Local "today" and "this week" need the member's zone; set by the clients.
+      ALTER TABLE accounts ADD COLUMN time_zone text NOT NULL DEFAULT 'UTC';
+
+      -- Derived from activity_events by @lifeos/promethee; rebuilt on every refresh.
+      CREATE TABLE activities (
+        id text PRIMARY KEY,
+        account_id uuid NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+        starts_at timestamptz NOT NULL,
+        ends_at timestamptz NOT NULL,
+        activity jsonb NOT NULL
+      );
+      CREATE INDEX activities_account_time ON activities(account_id, starts_at);
+
+      -- The member's corrections, anchored to a source event so they survive re-derivation.
+      CREATE TABLE activity_corrections (
+        id bigserial PRIMARY KEY,
+        account_id uuid NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+        event_id text NOT NULL,
+        correction jsonb NOT NULL,
+        at timestamptz NOT NULL
+      );
+      CREATE INDEX activity_corrections_account ON activity_corrections(account_id);
+
+      -- The XP ledger. Rows change only from awarded/pending/provisional to reversed.
+      CREATE TABLE game_awards (
+        id text PRIMARY KEY,
+        account_id uuid NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+        award_type text NOT NULL,
+        activity_id text,
+        activity_starts_at timestamptz,
+        quest_id text,
+        status text NOT NULL,
+        xp integer NOT NULL,
+        created_at timestamptz NOT NULL,
+        award jsonb NOT NULL
+      );
+      CREATE INDEX game_awards_account ON game_awards(account_id, created_at);
+
+      CREATE TABLE quests (
+        id text PRIMARY KEY,
+        account_id uuid NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+        template text NOT NULL,
+        starts_at timestamptz NOT NULL,
+        ends_at timestamptz NOT NULL,
+        skipped_at timestamptz,
+        definition jsonb NOT NULL
+      );
+      CREATE INDEX quests_account_time ON quests(account_id, ends_at);
+
+      -- Up to three things the member intends to do on a given local day.
+      CREATE TABLE priorities (
+        id uuid PRIMARY KEY,
+        account_id uuid NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+        local_date text NOT NULL,
+        text text NOT NULL,
+        skill text,
+        position integer NOT NULL,
+        done_at timestamptz,
+        created_at timestamptz NOT NULL
+      );
+      CREATE INDEX priorities_account_date ON priorities(account_id, local_date);
+
+      -- "Did this recap represent your week?" — half of the north-star metric.
+      CREATE TABLE recap_feedback (
+        account_id uuid NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+        week_start text NOT NULL,
+        accurate boolean NOT NULL,
+        at timestamptz NOT NULL,
+        PRIMARY KEY (account_id, week_start)
       );
     `,
   },

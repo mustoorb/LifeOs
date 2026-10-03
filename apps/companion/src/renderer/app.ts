@@ -1,5 +1,5 @@
 import { localDateKey } from '@lifeos/contracts';
-import type { AppsView, CompanionApi, CompanionState, TimelineView, UncategorizedApp } from '../shared/api.js';
+import type { AccountView, AppsView, CompanionApi, CompanionState, TimelineView, UncategorizedApp } from '../shared/api.js';
 import { categoryLabel, formatClock, formatDay, formatDuration } from '../shared/format.js';
 
 declare global {
@@ -17,6 +17,7 @@ let state: CompanionState;
 let dateKey = '';
 let timeline: TimelineView | null = null;
 let apps: AppsView | null = null;
+let account: AccountView | null = null;
 
 // --- tiny DOM helper: text only, never innerHTML (app names come from other apps) ---
 
@@ -145,8 +146,9 @@ function privacyFacts(): HTMLElement[] {
     h(
       'p',
       {},
-      'It stays on this Mac, in a folder only your account can read, and raw records are deleted after 30 days. Nothing is uploaded. ' +
-        'An app only counts toward progress after you put it in a category. You can export a day as categories and durations, never app names.',
+      'It stays on this Mac, in a folder only your account can read, and raw records are deleted after 30 days. ' +
+        'Nothing is uploaded unless you sign in to LifeOS and turn uploads on. Then only finished sessions are sent, as categories, times and durations, never app names. ' +
+        'An app only counts toward progress after you put it in a category.',
     ),
     h('h3', {}, 'Your controls'),
     h('p', {}, 'Pause from the menu bar at any time, exclude apps, delete the last hour, a day, or everything, and turn tracking off.'),
@@ -179,7 +181,129 @@ function renderConsent(): void {
 // --- dashboard --------------------------------------------------------------------
 
 function renderDashboard(): void {
-  main.replaceChildren(dayCard(), uncategorizedCard(), appsCard(), privacyCard());
+  main.replaceChildren(accountCard(), dayCard(), uncategorizedCard(), appsCard(), privacyCard());
+}
+
+// --- account ------------------------------------------------------------------------
+
+function input(attrs: Record<string, string>): HTMLInputElement {
+  return h('input', { class: 'field', attrs });
+}
+
+function field(label: string, control: HTMLElement, hint?: string): HTMLElement {
+  return h('label', { class: 'form-field' }, h('span', { class: 'small muted' }, label), control, hint ? h('span', { class: 'small muted' }, hint) : null);
+}
+
+/** Swaps just the account card, so typing elsewhere isn't disturbed. */
+function renderAccount(): void {
+  document.getElementById('account')?.replaceWith(accountCard());
+}
+
+function accountCard(): HTMLElement {
+  const card = (...children: Child[]) => h('section', { class: 'card', id: 'account', attrs: { 'data-testid': 'account' } }, h('h2', {}, 'LifeOS account'), ...children);
+  if (!account) return card(h('p', { class: 'muted' }, 'Loading…'));
+  const set = (next: AccountView) => {
+    account = next;
+    renderAccount();
+  };
+  const notice = account.notice ? h('p', { class: 'warn' }, account.notice) : null;
+
+  switch (account.status) {
+    case 'signed_out': {
+      const email = input({ type: 'email', autocomplete: 'email', placeholder: 'you@example.com', 'aria-label': 'Email' });
+      const send = button('Email me a code', async () => set(await api.startSignIn(email.value)), 'primary');
+      email.addEventListener('keydown', (event) => event.key === 'Enter' && send.click());
+      return card(
+        h('p', { class: 'muted' }, 'Connect this Mac to your LifeOS account so your focused time counts toward quests and progress. Signing in uploads nothing by itself.'),
+        notice,
+        h('div', { class: 'row' }, email, send),
+      );
+    }
+    case 'awaiting_code': {
+      const code = input({ inputmode: 'numeric', autocomplete: 'one-time-code', maxlength: '6', placeholder: '123456', 'aria-label': 'Sign-in code' });
+      const verify = button('Continue', async () => set(await api.verifyCode(code.value)), 'primary');
+      code.addEventListener('keydown', (event) => event.key === 'Enter' && verify.click());
+      return card(
+        h('p', {}, 'Enter the six-digit code we sent to ', h('strong', {}, account.email ?? ''), '.'),
+        h('div', { class: 'row' }, code, verify),
+        h(
+          'div',
+          { class: 'row' },
+          button('Send a new code', async () => set(await api.startSignIn(account!.email ?? '')), 'link'),
+          button('Use a different email', async () => set(await api.cancelSignIn()), 'link'),
+        ),
+      );
+    }
+    case 'registration_required': {
+      const accessCode = input({ placeholder: 'ABCD-1234', autocomplete: 'off', 'aria-label': 'Access code' });
+      const name = input({ maxlength: '40', autocomplete: 'nickname', 'aria-label': 'Name' });
+      const birthDate = input({ type: 'date', 'aria-label': 'Date of birth' });
+      const region = input({ maxlength: '2', placeholder: 'FR', autocomplete: 'country', 'aria-label': 'Country code', class: 'field short' });
+      const terms = h('input', { attrs: { type: 'checkbox' } });
+      return card(
+        h('p', {}, 'No LifeOS account uses ', h('strong', {}, account.email ?? ''), ' yet. LifeOS is invite-only for now: create your account with an access code.'),
+        h(
+          'div',
+          { class: 'form' },
+          field('Access code', accessCode),
+          field('Name others will see', name),
+          field('Date of birth', birthDate, 'Only used to confirm you are 18 or older. It is not stored.'),
+          field('Country (two letters)', region),
+        ),
+        h('label', { class: 'row small' }, terms, `I am 18 or older and accept the LifeOS terms (${account.termsVersion ?? ''}).`),
+        h(
+          'div',
+          { class: 'row', style: { marginTop: '10px' } },
+          button('Create account', async () =>
+            set(await api.register({ accessCode: accessCode.value, displayName: name.value, birthDate: birthDate.value, region: region.value, acceptTerms: terms.checked })),
+          'primary'),
+          button('Cancel', async () => set(await api.cancelSignIn()), 'link'),
+        ),
+      );
+    }
+    case 'signed_in':
+      return card(
+        h('p', {}, 'Signed in as ', h('strong', {}, account.displayName ?? ''), h('span', { class: 'muted' }, ` · ${account.email ?? ''}`)),
+        account.staysSignedIn ? null : h('p', { class: 'muted small' }, 'This Mac can’t store your sign-in securely, so you will sign in again after quitting.'),
+        uploadControls(account, set),
+        h('div', { class: 'row', style: { marginTop: '10px' } }, button('Sign out', async () => set(await api.signOut()), 'link')),
+      );
+  }
+}
+
+function uploadControls(view: AccountView, set: (next: AccountView) => void): HTMLElement {
+  const upload = view.upload;
+  const toggle = h('input', { attrs: { type: 'checkbox', 'data-testid': 'upload-toggle' } });
+  toggle.checked = upload.enabled;
+  toggle.addEventListener('change', () => void run(async () => set(await api.setUpload(toggle.checked))));
+
+  let status: Child = null;
+  if (upload.syncing) status = h('span', { class: 'muted' }, 'Uploading…');
+  else if (upload.lastError) status = h('span', { class: 'warn' }, upload.lastError);
+  else if (upload.lastSyncAt && upload.lastResult) {
+    const n = upload.lastResult.accepted;
+    status = h('span', { class: 'muted' }, `Last upload ${formatClock(upload.lastSyncAt, state.timeZone)}: ${n} new session${n === 1 ? '' : 's'}.`);
+  }
+
+  return h(
+    'div',
+    { class: 'upload' },
+    h('label', { class: 'row' }, toggle, h('strong', {}, 'Upload desktop activity to my account')),
+    h(
+      'p',
+      { class: 'muted small' },
+      'Sends finished sessions as categories, times and durations, never app names or window titles, a few minutes after each one ends. ' +
+        (upload.since ? `Starts with activity from ${new Date(upload.since).toLocaleDateString()}.` : 'Starts with today’s activity.') +
+        ' Deleting activity here also deletes it from your account.',
+    ),
+    h(
+      'div',
+      { class: 'row', attrs: { 'data-testid': 'upload-status' } },
+      status,
+      upload.pendingDeletes > 0 ? h('span', { class: 'muted' }, `${upload.pendingDeletes} deletion${upload.pendingDeletes === 1 ? '' : 's'} waiting to reach your account.`) : null,
+      upload.enabled && !upload.syncing ? button('Upload now', async () => set(await api.syncNow()), 'link') : null,
+    ),
+  );
 }
 
 function dayCard(): HTMLElement {
@@ -386,7 +510,7 @@ function renderAll(): void {
 
 async function loadData(): Promise<void> {
   if (state.status === 'needs_consent') return renderAll();
-  [timeline, apps] = await Promise.all([api.getTimeline(dateKey), api.getApps()]);
+  [timeline, apps, account] = await Promise.all([api.getTimeline(dateKey), api.getApps(), api.getAccount()]);
   renderAll();
 }
 
@@ -404,6 +528,10 @@ async function init(): Promise<void> {
     else renderHeader();
   });
   api.onNavigate(scrollToSection);
+  api.onAccountChanged((next) => {
+    account = next;
+    if (state.status !== 'needs_consent') renderAccount();
+  });
   await loadData();
   if (location.hash === '#privacy') scrollToSection('privacy');
   window.setInterval(() => {

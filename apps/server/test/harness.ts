@@ -18,6 +18,8 @@ export interface Harness {
   readonly services: Services;
   readonly mailer: MemoryMailer;
   readonly clock: { now: number };
+  /** The app as a fetch function, for clients under test (e.g. the companion). */
+  readonly fetch: (input: string, init?: RequestInit) => Promise<Response>;
   request(method: string, path: string, options?: { body?: unknown; token?: string; raw?: string }): Promise<Response>;
   json<T = any>(method: string, path: string, options?: { body?: unknown; token?: string }): Promise<{ status: number; body: T }>;
   close(): Promise<void>;
@@ -56,6 +58,7 @@ export async function createHarness(): Promise<Harness> {
     services,
     mailer,
     clock,
+    fetch: async (input, init) => app.request(input, init),
     request,
     async json(method, path, options) {
       const response = await request(method, path, options);

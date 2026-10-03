@@ -110,8 +110,10 @@ export class ActivityService {
     return rows.map((row) => row.event);
   }
 
+  /** Deletes every event that overlaps `[from, to)`. */
   async deleteRange(accountId: string, from: number, to: number): Promise<number> {
-    const result = await this.db.query('DELETE FROM activity_events WHERE account_id = $1 AND starts_at >= $2 AND starts_at < $3', [
+    // Anything that overlaps the range goes: deleting errs on the side of privacy.
+    const result = await this.db.query('DELETE FROM activity_events WHERE account_id = $1 AND starts_at < $3 AND ends_at > $2', [
       accountId,
       new Date(from),
       new Date(to),

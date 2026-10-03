@@ -50,6 +50,38 @@ export interface AppsView {
   readonly excluded: readonly { readonly appId: string; readonly name: string }[];
 }
 
+export type AccountStatus = 'signed_out' | 'awaiting_code' | 'registration_required' | 'signed_in';
+
+export interface AccountView {
+  readonly status: AccountStatus;
+  readonly serverUrl: string;
+  readonly email: string | null;
+  readonly displayName: string | null;
+  /** False when the Keychain is unavailable: the session lasts until quit. */
+  readonly staysSignedIn: boolean;
+  readonly termsVersion: string | null;
+  /** Why the user was signed out, if it wasn't their choice. */
+  readonly notice: string | null;
+  readonly upload: {
+    readonly enabled: boolean;
+    /** Sessions ending after this instant are uploaded once settled. */
+    readonly since: number | null;
+    readonly lastSyncAt: number | null;
+    readonly lastResult: { readonly accepted: number; readonly duplicates: number; readonly rejected: number } | null;
+    readonly lastError: string | null;
+    readonly pendingDeletes: number;
+    readonly syncing: boolean;
+  };
+}
+
+export interface RegistrationForm {
+  readonly accessCode: string;
+  readonly displayName: string;
+  readonly birthDate: string;
+  readonly region: string;
+  readonly acceptTerms: boolean;
+}
+
 export type PauseDuration = 30 | 60 | 'tomorrow' | 'indefinite';
 export type ForgetScope = 'last_hour' | 'today' | 'everything';
 
@@ -72,7 +104,16 @@ export interface CompanionApi {
   setExcluded(appId: string, excluded: boolean): Promise<AppsView>;
   forget(scope: ForgetScope): Promise<CompanionState>;
   exportDay(dateKey: string): Promise<ExportResult>;
+  getAccount(): Promise<AccountView>;
+  startSignIn(email: string): Promise<AccountView>;
+  verifyCode(code: string): Promise<AccountView>;
+  register(form: RegistrationForm): Promise<AccountView>;
+  cancelSignIn(): Promise<AccountView>;
+  signOut(): Promise<AccountView>;
+  setUpload(enabled: boolean): Promise<AccountView>;
+  syncNow(): Promise<AccountView>;
   onStateChanged(listener: (state: CompanionState) => void): () => void;
+  onAccountChanged(listener: (account: AccountView) => void): () => void;
   onNavigate(listener: (section: string) => void): () => void;
 }
 
@@ -90,6 +131,15 @@ export const CHANNELS = {
   setExcluded: 'companion:set-excluded',
   forget: 'companion:forget',
   exportDay: 'companion:export-day',
+  getAccount: 'companion:get-account',
+  startSignIn: 'companion:start-sign-in',
+  verifyCode: 'companion:verify-code',
+  register: 'companion:register',
+  cancelSignIn: 'companion:cancel-sign-in',
+  signOut: 'companion:sign-out',
+  setUpload: 'companion:set-upload',
+  syncNow: 'companion:sync-now',
+  accountChanged: 'companion:account-changed',
   stateChanged: 'companion:state-changed',
   navigate: 'companion:navigate',
 } as const;

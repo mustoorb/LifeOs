@@ -25,6 +25,23 @@ NSWorkspace frontmost app  ──►  HelperDetector ─┐
 - **`src/main/`** is the thin Electron shell: tray, window, IPC, and the native-helper supervisor.
 - **`src/renderer/`** is a framework-free page. It runs sandboxed with context isolation and a strict CSP, and renders every string as text.
 
+### Account and upload
+
+`src/core/account.ts` and `account-client.ts` connect the companion to the
+[LifeOS server](../server/README.md). All network calls run in the main process through
+`net.fetch`. The window has no network access.
+
+- **Signing in** uses an emailed six-digit code. If no account uses that email yet, the same card asks for an access code, a name, a date of birth (for the 18+ check, not stored) and a country. Signing in uploads nothing by itself.
+- **The session token** is encrypted with `safeStorage`, which is backed by the macOS Keychain. If secure storage is unavailable, the token stays in memory, the user signs in again after quitting, and the app says so. Linux's plaintext `basic_text` keyring counts as unavailable.
+- **Uploading is a separate switch.** Turning it on records `desktop_activity` consent on the account. Turning it off records the revocation, at once or at the next sync if offline.
+- **Only settled sessions are uploaded.** A session waits until it can no longer change: the merge gap plus the idle threshold plus 5 minutes after it ends, since server events are immutable. Uploads start with the day upload was turned on, run every 15 minutes and on wake, and use a watermark so nothing is sent twice.
+- **Deleting on the Mac also deletes on the account.** This covers the last hour, a day, everything, or turning tracking off with deletion, once anything may have been uploaded. Deletions are queued and retried if the server can't be reached.
+- **Each sync confirms the session.** If the session was revoked elsewhere, the companion signs out and says why.
+- The server URL is set at build time with `LIFEOS_SERVER_URL`. It must be HTTPS except for localhost. Development builds can override it at runtime.
+
+What the account receives: categories, start and end times, active seconds and focus tags.
+It never receives app bundle ids, app names or raw samples.
+
 ### Privacy behaviour
 
 | Behaviour | Where |
@@ -52,6 +69,10 @@ Off macOS, or without the helper, set a stand-in frontmost app:
 LIFEOS_DEV_FRONTMOST="com.apple.FinalCut:Final Cut Pro" LIFEOS_DATA_DIR=/tmp/lifeos npm start -w @lifeos/companion
 ```
 
+To sign in, run the [server](../server/README.md) locally. The default server URL is
+`http://127.0.0.1:8787`; point elsewhere with `LIFEOS_SERVER_URL`. Sign-in codes appear in
+the server's log.
+
 `LIFEOS_DEV_FRONTMOST` and `LIFEOS_DATA_DIR` are ignored in packaged builds. Without either
 the helper or the stand-in, the companion runs but reports "app detection unavailable" and
 records nothing.
@@ -71,6 +92,6 @@ packaging. Signing has not been exercised yet.
 
 ## Known gaps
 
-- No upload yet. Export writes a file that the future account service will accept.
+- Category changes and app exclusions apply to sessions not yet uploaded. Already-uploaded sessions keep their category, though deleting a time range removes them from the account.
 - No launch-at-login toggle yet. It should be opt-in, so it belongs on the consent screen.
 - `npm audit` reports a build-time advisory in electron-builder's download cache (`http-cache-semantics` via `got`). No patched version exists, and none of it ships in the app.

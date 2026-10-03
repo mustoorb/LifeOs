@@ -49,7 +49,7 @@ Errors look like `{ "error": { "code": "...", "message": "..." } }`. Signed-in r
 | `PUT /v1/me/enrollments/:seasonId` `{leaderboardOptIn}` | Opt in to ranking. Off by default. |
 | `GET/POST /v1/me/invites` | Single-use friend invites into your cohort. Up to 3 can be unused at once. |
 | `POST /v1/me/activity/desktop` | Upload a companion export. Needs `desktop_activity` consent. |
-| `GET/DELETE /v1/me/activity?from&to` | List or delete stored events. |
+| `GET/DELETE /v1/me/activity?from&to` | List events starting in the range, or delete every event that overlaps it. |
 | `/v1/admin/access-codes`, `/v1/admin/seasons`, `/v1/admin/accounts`, `/v1/admin/audit` | Admin only. |
 
 ## Security and privacy
@@ -67,7 +67,6 @@ Errors look like `{ "error": { "code": "...", "message": "..." } }`. Signed-in r
 - **A real mailer.** The server refuses to start with `NODE_ENV=production` until one exists, because the development mailer prints codes to the log. Picking a provider is an open decision.
 - **Shared rate limiting.** The limiter is in memory, which is correct for one instance only.
 - **An admin web console.** Admin work currently goes through the CLI or the admin API.
-- **Companion sign-in and upload.** The companion still exports a file. The contract test in `test/companion-server-contract.test.ts` checks that the file matches this API.
 
 ## Tests
 

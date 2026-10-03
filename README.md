@@ -76,7 +76,7 @@ For the apps, see [`apps/companion/README.md`](apps/companion/README.md) and
 ## Next steps (blueprint §21)
 
 1. Choose an email provider so the server can run in production, then deploy it for the founding cohort.
-2. Companion sign-in and upload, replacing the export file. Signing and notarization, and an opt-in launch-at-login.
+2. Companion signing and notarization, and an opt-in launch-at-login.
 3. ECLIPSE home: today's quests, the correction queue, XP explanations and a private weekly recap, served from stored activity.
 4. Friends and invite-only groups, plus the friend leaderboard.
 5. Instrumentation for the north-star metric, the **Weekly Meaningful Progress Rate**.

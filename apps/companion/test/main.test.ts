@@ -13,7 +13,7 @@ const state: CompanionState = {
   focusStartedAt: null,
   todayActiveMinutes: 72,
   timeZone: 'Europe/Paris',
-  privacyNoticeVersion: 'desktop-2026-10',
+  privacyNoticeVersion: 'desktop-2026-10b',
   consentGrantedAt: 1,
   detectorRunning: true,
 };

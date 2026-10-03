@@ -1,6 +1,8 @@
-import { Menu, Tray, app, powerMonitor } from 'electron';
+import { Menu, Tray, app, net, powerMonitor, safeStorage } from 'electron';
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
+import { AccountClient, validateServerUrl } from '../core/account-client.js';
+import { AccountManager, type SecretBox } from '../core/account.js';
 import { CompanionService } from '../core/service.js';
 import { LocalStore } from '../core/store.js';
 import { CHANNELS } from '../shared/api.js';
@@ -13,6 +15,28 @@ import { currentWindow, openWindow } from './window.js';
 /** The companion's own bundle id; looking at your own timeline is not activity. */
 const OWN_BUNDLE_IDS = new Set(['app.lifeos.companion', 'com.github.Electron']);
 const MINUTE_MS = 60_000;
+/** How often settled sessions are uploaded when the user has turned uploads on. */
+const SYNC_INTERVAL_MS = 15 * MINUTE_MS;
+
+/** Baked in at build time (see build.mjs); overridable only in development. */
+declare const __LIFEOS_SERVER_URL__: string;
+
+function serverUrl(): string {
+  const override = !app.isPackaged ? process.env.LIFEOS_SERVER_URL : undefined;
+  return validateServerUrl(override ?? __LIFEOS_SERVER_URL__);
+}
+
+/** macOS Keychain via safeStorage. Linux's plaintext fallback does not count as secure. */
+function keychain(): SecretBox {
+  const available =
+    safeStorage.isEncryptionAvailable() &&
+    !(process.platform === 'linux' && safeStorage.getSelectedStorageBackend() === 'basic_text');
+  return {
+    available,
+    encrypt: (plain) => safeStorage.encryptString(plain).toString('base64'),
+    decrypt: (sealed) => safeStorage.decryptString(Buffer.from(sealed, 'base64')),
+  };
+}
 
 if (!app.requestSingleInstanceLock()) {
   app.quit();
@@ -44,12 +68,16 @@ async function start(): Promise<void> {
   app.dock?.hide();
   const timeZone = () => Intl.DateTimeFormat().resolvedOptions().timeZone;
   const dataDir = process.env.LIFEOS_DATA_DIR && !app.isPackaged ? process.env.LIFEOS_DATA_DIR : join(app.getPath('userData'), 'activity');
-  const service = await CompanionService.open({ store: new LocalStore(dataDir, timeZone), now: Date.now, timeZone });
+  const store = new LocalStore(dataDir, timeZone);
+  const service = await CompanionService.open({ store, now: Date.now, timeZone });
+  // Requests go through Chromium's network stack, so system proxies and certificates apply.
+  const client = new AccountClient(serverUrl(), (input, init) => net.fetch(input, init));
+  const account = await AccountManager.open({ store, service, client, secrets: keychain(), now: Date.now, timeZone });
 
   const detector = createDetector((running) => service.setDetectorRunning(running));
   detector.start();
   service.setDetectorRunning(detector.running);
-  registerIpc(service);
+  registerIpc(service, account);
 
   // --- menu bar ---
   const tray = new Tray(createTrayIcon());
@@ -60,7 +88,7 @@ async function start(): Promise<void> {
     resume: () => void service.resume(),
     startFocus: () => void service.startFocus(),
     stopFocus: () => void service.stopFocus(),
-    forget: (scope) => void forgetWithConfirmation(service, scope),
+    forget: (scope) => void forgetWithConfirmation(service, scope, account.view().upload.since !== null),
     quit: () => app.quit(),
   };
   const render = () => {
@@ -71,6 +99,12 @@ async function start(): Promise<void> {
   };
   service.onChange(render);
   render();
+  account.onChange(() => currentWindow()?.webContents.send(CHANNELS.accountChanged, account.view()));
+
+  // --- upload ---
+  const sync = () => void account.sync().catch(logError);
+  setInterval(sync, SYNC_INTERVAL_MS);
+  sync();
 
   // --- sampling ---
   let sampler: NodeJS.Timeout | null = null;
@@ -96,7 +130,10 @@ async function start(): Promise<void> {
     void service.flush().catch(logError);
   });
   powerMonitor.on('lock-screen', () => void service.flush().catch(logError));
-  powerMonitor.on('resume', startSampling);
+  powerMonitor.on('resume', () => {
+    startSampling();
+    sync();
+  });
 
   // Today's total for the menu bar, and the retention sweep.
   setInterval(() => {

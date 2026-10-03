@@ -29,8 +29,8 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run check
-      - name: Server integration tests ran (not skipped)
-        run: npx vitest run apps/server --reporter=verbose | tee server-tests.txt && ! grep -q "skipped" server-tests.txt
+      - name: Database integration tests ran (not skipped)
+        run: npx vitest run apps/server test --reporter=verbose | tee db-tests.txt && ! grep -q "skipped" db-tests.txt
       - run: npm run build -w @lifeos/companion
       - run: npm run build -w @lifeos/server
 

@@ -1,13 +1,16 @@
 import { dialog, ipcMain, type IpcMainInvokeEvent } from 'electron';
 import { writeFile } from 'node:fs/promises';
 import { isBundleId } from '../core/settings.js';
+import type { AccountManager } from '../core/account.js';
 import type { CompanionService } from '../core/service.js';
 import {
   CHANNELS,
+  type AccountView,
   type CompanionState,
   type ExportResult,
   type ForgetScope,
   type PauseDuration,
+  type RegistrationForm,
 } from '../shared/api.js';
 import { RENDERER_URL, currentWindow } from './window.js';
 
@@ -40,7 +43,7 @@ async function confirm(message: string, detail: string, action: string): Promise
   return result.response === 0;
 }
 
-export async function forgetWithConfirmation(service: CompanionService, scope: ForgetScope): Promise<void> {
+export async function forgetWithConfirmation(service: CompanionService, scope: ForgetScope, alsoAccount = false): Promise<void> {
   const text: Record<ForgetScope, [string, string]> = {
     last_hour: ['Delete the last hour?', 'Everything recorded on this Mac in the past 60 minutes will be removed.'],
     today: ['Delete today?', 'Everything recorded on this Mac today will be removed.'],
@@ -50,10 +53,24 @@ export async function forgetWithConfirmation(service: CompanionService, scope: F
     ],
   };
   const [message, detail] = text[scope];
-  if (await confirm(message, detail, 'Delete')) await service.forget(scope);
+  const note = alsoAccount ? ' It is also removed from your LifeOS account.' : '';
+  if (await confirm(message, detail + note, 'Delete')) await service.forget(scope);
 }
 
-export function registerIpc(service: CompanionService): void {
+const isShortString = (max: number) => (v: unknown): v is string => typeof v === 'string' && v.length > 0 && v.length <= max;
+
+function parseRegistration(value: unknown): RegistrationForm {
+  const form = (value ?? {}) as Record<string, unknown>;
+  return {
+    accessCode: expect(form.accessCode, isShortString(20), 'access code'),
+    displayName: expect(form.displayName, isShortString(40), 'name'),
+    birthDate: expect(form.birthDate, (v): v is string => typeof v === 'string' && DATE_KEY.test(v), 'date of birth'),
+    region: expect(form.region, (v): v is string => typeof v === 'string' && /^[A-Za-z]{2}$/.test(v), 'region'),
+    acceptTerms: expect(form.acceptTerms, isBoolean, 'terms'),
+  };
+}
+
+export function registerIpc(service: CompanionService, account: AccountManager): void {
   const handle = <A extends unknown[], R>(channel: string, fn: (...args: A) => Promise<R> | R) =>
     ipcMain.handle(channel, (event, ...args) => {
       assertTrustedSender(event);
@@ -63,6 +80,19 @@ export function registerIpc(service: CompanionService): void {
     await task;
     return service.state();
   };
+
+  const withAccount = async (task: Promise<void>): Promise<AccountView> => {
+    await task;
+    return account.view();
+  };
+  handle(CHANNELS.getAccount, () => account.view());
+  handle(CHANNELS.startSignIn, (email: unknown) => withAccount(account.startSignIn(expect(email, isShortString(254), 'email'))));
+  handle(CHANNELS.verifyCode, (code: unknown) => withAccount(account.verifyCode(expect(code, isShortString(12), 'code'))));
+  handle(CHANNELS.register, (form: unknown) => withAccount(account.register(parseRegistration(form))));
+  handle(CHANNELS.cancelSignIn, () => withAccount(account.cancelSignIn()));
+  handle(CHANNELS.signOut, () => withAccount(account.signOut()));
+  handle(CHANNELS.setUpload, (enabled: unknown) => withAccount(account.setUpload(expect(enabled, isBoolean, 'flag'))));
+  handle(CHANNELS.syncNow, () => withAccount(account.sync()));
 
   handle(CHANNELS.getState, () => service.state());
   handle(CHANNELS.getTimeline, (dateKey: unknown) => service.timeline(expect(dateKey, isDateKey, 'date')));
@@ -92,7 +122,9 @@ export function registerIpc(service: CompanionService): void {
     await service.setExcluded(app, exclude);
     return service.apps();
   });
-  handle(CHANNELS.forget, (scope: unknown) => withState(forgetWithConfirmation(service, expect(scope, isScope, 'scope'))));
+  handle(CHANNELS.forget, (scope: unknown) =>
+    withState(forgetWithConfirmation(service, expect(scope, isScope, 'scope'), account.view().upload.since !== null)),
+  );
   handle(CHANNELS.exportDay, async (dateKey: unknown): Promise<ExportResult> => {
     const key = expect(dateKey, isDateKey, 'date');
     const payload = await service.exportDay(key);

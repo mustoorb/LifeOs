@@ -1,4 +1,4 @@
-import { DAY, HOUR, localDateKey, localDayWindow, type Instant } from '@lifeos/contracts';
+import { DAY, HOUR, localDateKey, localDayWindow, type Instant, type Interval } from '@lifeos/contracts';
 import {
   CONSENT_SCOPES,
   grantConsent,
@@ -22,8 +22,12 @@ import { CATEGORIES, isBundleId, isCategory, parseSettings, type CompanionSettin
 import type { LocalStore } from './store.js';
 import { buildSessions, buildTimeline, type StoredFocusBlock } from './timeline.js';
 
-/** Version of the plain-language notice shown on the consent screen. */
-export const PRIVACY_NOTICE_VERSION = 'desktop-2026-10';
+/**
+ * Version of the plain-language notice shown on the consent screen. Bump it
+ * whenever that text changes, so each consent records what the user read.
+ * desktop-2026-10b: describes optional upload to a LifeOS account.
+ */
+export const PRIVACY_NOTICE_VERSION = 'desktop-2026-10b';
 
 /** Focus blocks left running are closed after this long. */
 export const MAX_FOCUS_MS = 4 * HOUR;
@@ -62,6 +66,7 @@ export interface TickInput {
  */
 export class CompanionService {
   private readonly listeners = new Set<() => void>();
+  private readonly forgetListeners = new Set<(range: Interval) => void>();
   private queue: Promise<unknown> = Promise.resolve();
   private readonly buffer: SampleBuffer;
   private idle = false;
@@ -97,6 +102,12 @@ export class CompanionService {
       parseFocus(focus),
       parseAppNames(apps),
     );
+  }
+
+  /** Called after the user deletes recorded activity, with the range deleted. */
+  onForget(listener: (range: Interval) => void): () => void {
+    this.forgetListeners.add(listener);
+    return () => this.forgetListeners.delete(listener);
   }
 
   onChange(listener: () => void): () => void {
@@ -193,6 +204,7 @@ export class CompanionService {
       if (deleteData) await this.deleteAllActivity();
       await this.refreshTodayUnlocked();
       this.emit();
+      if (deleteData) this.emitForget({ start: 0, end: this.deps.now() + 1 });
     });
   }
 
@@ -292,18 +304,22 @@ export class CompanionService {
     return this.serial(async () => {
       const now = this.deps.now();
       this.buffer.discard();
+      let range: Interval;
       if (scope === 'last_hour') {
-        await this.deps.store.forgetRange({ start: now - HOUR, end: now + 1 });
-        await this.trimFocus({ start: now - HOUR, end: now + 1 });
+        range = { start: now - HOUR, end: now + 1 };
+        await this.deps.store.forgetRange(range);
+        await this.trimFocus(range);
       } else if (scope === 'today') {
-        const window = localDayWindow(this.today(), this.deps.timeZone());
-        await this.deps.store.forgetRange(window);
-        await this.trimFocus(window);
+        range = localDayWindow(this.today(), this.deps.timeZone());
+        await this.deps.store.forgetRange(range);
+        await this.trimFocus(range);
       } else {
+        range = { start: 0, end: now + 1 };
         await this.deleteAllActivity();
       }
       await this.refreshTodayUnlocked();
       this.emit();
+      this.emitForget(range);
     });
   }
 
@@ -342,6 +358,28 @@ export class CompanionService {
         userId: LOCAL_USER_ID,
         now: this.deps.now(),
       });
+    });
+  }
+
+  /**
+   * How long after a session ends before it can no longer change: later
+   * samples within the merge gap would extend it, and the idle threshold
+   * decides retroactively whether its tail counted. Uploads wait this long.
+   */
+  settleDelayMs(): number {
+    return this.settings.mergeGapMin * 60_000 + this.settings.idleThresholdSec * 1000 + 5 * 60_000;
+  }
+
+  /** Sessions that ended in `(after, until]`, normalized for upload. */
+  exportSettled(after: Instant, until: Instant): Promise<DesktopExport> {
+    return this.serial(async () => {
+      const now = this.deps.now();
+      // Read up to now, not `until`, so a session still running isn't cut short and uploaded early.
+      const samples = await this.deps.store.readSamples({ start: Math.max(0, after - 13 * HOUR), end: now + 1 });
+      const sessions = buildSessions(samples, this.settings, this.focus, now).filter(
+        (session) => session.interval.end > after && session.interval.end <= until,
+      );
+      return buildExport({ sessions, timeZone: this.deps.timeZone(), consent: this.consent, userId: LOCAL_USER_ID, now });
     });
   }
 
@@ -429,6 +467,10 @@ export class CompanionService {
       idleThresholdSec: this.settings.idleThresholdSec,
       deniedApps: new Set(this.settings.deniedApps),
     };
+  }
+
+  private emitForget(range: Interval): void {
+    for (const listener of this.forgetListeners) listener(range);
   }
 
   private emit(): void {

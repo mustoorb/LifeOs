@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer, type IpcRendererEvent } from 'electron';
-import { CHANNELS, type CompanionApi, type CompanionState } from '../shared/api.js';
+import { CHANNELS, type AccountView, type CompanionApi, type CompanionState } from '../shared/api.js';
 
 /** The only surface the window can reach: typed calls, no Node, no raw IPC. */
 const api: CompanionApi = {
@@ -16,6 +16,19 @@ const api: CompanionApi = {
   setExcluded: (appId, excluded) => ipcRenderer.invoke(CHANNELS.setExcluded, appId, excluded),
   forget: (scope) => ipcRenderer.invoke(CHANNELS.forget, scope),
   exportDay: (dateKey) => ipcRenderer.invoke(CHANNELS.exportDay, dateKey),
+  getAccount: () => ipcRenderer.invoke(CHANNELS.getAccount),
+  startSignIn: (email) => ipcRenderer.invoke(CHANNELS.startSignIn, email),
+  verifyCode: (code) => ipcRenderer.invoke(CHANNELS.verifyCode, code),
+  register: (form) => ipcRenderer.invoke(CHANNELS.register, form),
+  cancelSignIn: () => ipcRenderer.invoke(CHANNELS.cancelSignIn),
+  signOut: () => ipcRenderer.invoke(CHANNELS.signOut),
+  setUpload: (enabled) => ipcRenderer.invoke(CHANNELS.setUpload, enabled),
+  syncNow: () => ipcRenderer.invoke(CHANNELS.syncNow),
+  onAccountChanged(listener) {
+    const handler = (_event: IpcRendererEvent, account: AccountView) => listener(account);
+    ipcRenderer.on(CHANNELS.accountChanged, handler);
+    return () => ipcRenderer.removeListener(CHANNELS.accountChanged, handler);
+  },
   onStateChanged(listener) {
     const handler = (_event: IpcRendererEvent, state: CompanionState) => listener(state);
     ipcRenderer.on(CHANNELS.stateChanged, handler);

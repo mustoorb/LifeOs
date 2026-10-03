@@ -1,0 +1,71 @@
+# LifeOS: ECLIPSE + PROMETHEE
+
+> Make your real life playable, without making it fake.
+
+This repository holds a multiplayer Life RPG. Real, evidenced effort, on a computer and in
+the physical world, becomes progress, reputation and community participation. The full
+product thinking is in [`docs/blueprint.md`](docs/blueprint.md). Working defaults for its
+open decisions are in [`docs/decisions.md`](docs/decisions.md).
+
+## What's here
+
+The repository currently holds the **domain core**: pure, dependency-free TypeScript that
+implements the blueprint's evidence pipeline and game rules. It contains no UI, server or
+database yet. These modules are the rules those layers will call.
+
+```
+packages/
+  contracts/   Shared types: ActivityEvent, DerivedActivity, evidence tiers, time helpers
+  promethee/   Tracking & intelligence layer
+  eclipse/     Life RPG layer
+test/          End-to-end daily-loop test spanning both layers
+```
+
+| Package | Module | Blueprint |
+|---|---|---|
+| promethee | `consent.ts`: append-only, granular, revocable consent ledger | §16.1 |
+| | `connectors.ts`: declarative connector capabilities, sensitive-metric scopes | §17 |
+| | `normalize.ts`: validation, duration bounds, metric filtering, idempotent ids, private by default | §9, §10 |
+| | `desktop.ts`: local-first aggregation of foreground samples, pause, exclusions, focus blocks, "forget last hour" | §18 |
+| | `dedupe.ts`: duplicate grouping, metric merge, earned corroboration, noisy-OR confidence | §9, §10 |
+| | `anomaly.ts`: pace, step-rate, body/screen overlap and manual rate-limit flags | §10 anti-cheat |
+| | `corrections.ts`: confirm / recategorize / discard / visibility, plus the correction queue | §5, §10 |
+| eclipse | `skills.ts`: the 4-domain skill tree, eligible skills per activity, user allocation | §11 |
+| | `xp.ts`: versioned ruleset, explained awards, diminishing returns, caps, reversal, reconciliation | §8, §11 |
+| | `levels.ts`: account and skill level curves | §11 |
+| | `quests.ts`: constrained rule builder, evaluation, pooled guild quests, templates | §12 |
+| | `leaderboard.ts`: bounded seasonal score, bracketed opt-in ranking with shared ranks for ties | §13 |
+| | `seasons.ts`: 6–12 week seasons, enrollment, archive and rollover | §14 |
+| | `access-codes.ts`: readable codes, expiry/cap/age/region/revocation checks | §14 |
+
+### Boundaries
+
+ECLIPSE consumes only `@lifeos/contracts`, never PROMETHEE internals. A test
+(`packages/eclipse/test/boundary.test.ts`) enforces this. That keeps the two products
+separately bounded, as §2 and §8 require, even while they ship in one installer.
+
+### Principles the code enforces
+
+- **The evidence trail is immutable.** Source events are never mutated. Derived activities reference them, and every XP award records its rule version and basis.
+- **Absence is not zero.** Metrics are optional, and a missing value is never coerced to 0.
+- **Privacy by default.** Events default to `private`. Calendar context needs calendar consent. Heart rate and calories need health consent. Desktop samples carry no titles or content.
+- **Explainable XP.** Each award carries human-readable lines, for example `25 Focus XP`, then `50 min digital session; observed evidence 1.0×`.
+- **Fair competition.** Leaderboards use a bounded seasonal score from `awarded` quests and diverse activity, never lifetime XP. Opt-in is required, and provisional or flagged evidence is excluded.
+
+## Development
+
+Requires Node 22+.
+
+```sh
+npm install
+npm run check      # typecheck + tests
+npm test           # tests only
+```
+
+## Next steps (blueprint §21)
+
+1. Account and access-code service with persistence and an admin console for invite issuance and season configuration.
+2. macOS desktop companion shell around `promethee/desktop.ts`, with visible status, a pause switch, per-app mapping and a local timeline.
+3. ECLIPSE home: today's quests, the correction queue, XP explanations and a private weekly recap.
+4. Friends and invite-only groups, plus the friend leaderboard.
+5. Instrumentation for the north-star metric, the **Weekly Meaningful Progress Rate**.

@@ -9,15 +9,17 @@ open decisions are in [`docs/decisions.md`](docs/decisions.md).
 
 ## What's here
 
-The repository currently holds the **domain core**: pure, dependency-free TypeScript that
-implements the blueprint's evidence pipeline and game rules. It contains no UI, server or
-database yet. These modules are the rules those layers will call.
+The repository holds the **domain core** and the **macOS desktop companion**. The core is
+pure, dependency-free TypeScript that implements the blueprint's evidence pipeline and game
+rules. There is no server or database yet.
 
 ```
 packages/
   contracts/   Shared types: ActivityEvent, DerivedActivity, evidence tiers, time helpers
   promethee/   Tracking & intelligence layer
   eclipse/     Life RPG layer
+apps/
+  companion/   macOS menu-bar companion (Electron + a Swift helper), see its README
 test/          End-to-end daily-loop test spanning both layers
 ```
 
@@ -62,10 +64,12 @@ npm run check      # typecheck + tests
 npm test           # tests only
 ```
 
+For the desktop companion, see [`apps/companion/README.md`](apps/companion/README.md).
+
 ## Next steps (blueprint §21)
 
-1. Account and access-code service with persistence and an admin console for invite issuance and season configuration.
-2. macOS desktop companion shell around `promethee/desktop.ts`, with visible status, a pause switch, per-app mapping and a local timeline.
+1. Account and access-code service with persistence and an admin console for invite issuance and season configuration. The companion's export already produces the events it will accept.
+2. Signing and notarization of the companion, and an opt-in launch-at-login.
 3. ECLIPSE home: today's quests, the correction queue, XP explanations and a private weekly recap.
 4. Friends and invite-only groups, plus the friend leaderboard.
 5. Instrumentation for the north-star metric, the **Weekly Meaningful Progress Rate**.

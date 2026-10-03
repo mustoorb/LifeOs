@@ -15,3 +15,41 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run check
+      - run: npm run build -w @lifeos/companion
+
+  companion-macos:
+    runs-on: macos-latest
+    defaults:
+      run:
+        working-directory: apps/companion
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+        working-directory: .
+      - name: Build the native helper (universal)
+        run: |
+          npm run build:helper
+          lipo -info build/bin/lifeos-frontmost
+      - name: Helper prints the frontmost app as JSON
+        run: |
+          ./build/bin/lifeos-frontmost > helper.out &
+          pid=$!
+          sleep 3
+          kill "$pid"
+          head -n 1 helper.out
+          head -n 1 helper.out | python3 -c 'import json, sys; d = json.loads(sys.stdin.readline()); assert set(d) == {"bundleId", "name"}, d'
+      - run: npm run build
+      - name: Package an unsigned app bundle
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+        run: npx electron-builder --mac --dir
+      - name: Inspect the bundle
+        run: |
+          app=$(ls -d release/mac*/"LifeOS Companion.app")
+          test "$(plutil -extract LSUIElement raw "$app/Contents/Info.plist")" = "true"
+          test -x "$app/Contents/Resources/bin/lifeos-frontmost"
+          codesign -d --entitlements - "$app" || true

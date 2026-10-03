@@ -20,4 +20,6 @@ in this repository needs a working default for each one. The defaults below are
 - **Self-reported XP is `provisional`.** It counts toward personal levels and is excluded from competitive scores (§10 tier 0).
 - **Corroboration is earned, not declared.** A connector cannot claim tier 3 or tier 4 evidence. Tier 3 comes only from deduplication finding at least two independent non-manual sources.
 - **Merging never widens visibility.** A merged activity takes the most restrictive visibility of its sources.
-- **Unmapped apps are not tracked.** The desktop aggregator only records apps that the user has mapped to a category.
+- **Unmapped apps never produce sessions.** Only apps the user has put in a category count toward anything. The companion keeps raw samples for unmapped apps on the Mac for up to 30 days, so the user can see what was in front and choose a category or exclude the app. Excluded apps are not recorded at all.
+- **The desktop companion is Electron plus a small Swift helper.** Electron lets the companion run `@lifeos/promethee` unchanged instead of porting it to Swift. The helper reads only `NSWorkspace.frontmostApplication`, so the companion needs no Accessibility or Screen Recording permission. The cost is a larger app and higher idle memory than a native Swift app. Revisit after the founding season if power or size becomes a complaint.
+- **No upload until the account service exists.** The companion exports a day as normalized events in a file the user saves.

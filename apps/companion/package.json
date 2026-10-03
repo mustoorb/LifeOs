@@ -1,0 +1,21 @@
+{
+  "name": "@lifeos/companion",
+  "productName": "LifeOS Companion",
+  "version": "0.1.0",
+  "private": true,
+  "description": "PROMETHEE desktop companion: visible, local-first activity tracking for macOS",
+  "main": "dist/main.cjs",
+  "scripts": {
+    "build": "node build.mjs",
+    "build:helper": "sh scripts/build-helper.sh",
+    "start": "npm run build && electron .",
+    "dist:mac": "npm run build:helper && npm run build && electron-builder --mac"
+  },
+  "devDependencies": {
+    "@lifeos/contracts": "*",
+    "@lifeos/promethee": "*",
+    "electron": "^44.5.1",
+    "electron-builder": "^26.15.3",
+    "esbuild": "^0.28.2"
+  }
+}

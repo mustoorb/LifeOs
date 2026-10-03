@@ -46,7 +46,7 @@ jobs:
       - name: Package an unsigned app bundle
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: 'false'
-        run: npx electron-builder --mac --dir
+        run: npx electron-builder --mac --dir --publish never
       - name: Inspect the bundle
         run: |
           app=$(ls -d release/mac*/"LifeOS Companion.app")

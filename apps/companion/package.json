@@ -9,12 +9,12 @@
     "build": "node build.mjs",
     "build:helper": "sh scripts/build-helper.sh",
     "start": "npm run build && electron .",
-    "dist:mac": "npm run build:helper && npm run build && electron-builder --mac"
+    "dist:mac": "npm run build:helper && npm run build && electron-builder --mac --publish never"
   },
   "devDependencies": {
     "@lifeos/contracts": "*",
     "@lifeos/promethee": "*",
-    "electron": "^44.5.1",
+    "electron": "44.5.1",
     "electron-builder": "^26.15.3",
     "esbuild": "^0.28.2"
   }

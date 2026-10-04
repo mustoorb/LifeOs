@@ -62,6 +62,7 @@ jobs:
           head -n 1 helper.out | python3 -c 'import json, sys; d = json.loads(sys.stdin.readline()); assert set(d) == {"bundleId", "name"}, d'
       - run: npm run build
       - name: The Mac hosting script runs on the bash and plutil that ship with macOS
+        working-directory: .
         run: |
           /bin/bash -n deploy/mac.sh
           /bin/bash -n deploy/lifeos

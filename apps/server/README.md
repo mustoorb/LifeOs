@@ -66,7 +66,7 @@ manual logs and corrections, and on each home or recap request. Each run:
 
 | Route | Purpose |
 |---|---|
-| `GET /v1/home?tz=` | Level and skills, today's priorities, quests, activity with XP explanations, the review queue, recent XP, the season |
+| `GET /v1/home?tz=` | Level and skills, today's priorities, quests, activity with XP explanations, the review queue, recent XP, the season, badges |
 | `POST /v1/me/activities/:id/correction` `{kind: confirm \| discard \| recategorize, type?}` | Corrections. They are anchored to a source event, so they survive re-derivation. |
 | `POST /v1/me/activity/manual` | Self-reported workouts and sessions. They earn provisional XP and never count toward rankings. |
 | `POST/PATCH/DELETE /v1/me/priorities` | Up to 3 per local day |

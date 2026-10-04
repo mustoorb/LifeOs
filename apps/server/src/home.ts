@@ -24,6 +24,7 @@ import {
 } from '@lifeos/eclipse';
 import { MANUAL_LOG, normalizeObservation, type Correction } from '@lifeos/promethee';
 import { randomUUID } from 'node:crypto';
+import { computeBadges, loadBadgeFacts } from './badges.js';
 import { transaction, type Db } from './db.js';
 import { GameEngine, currentSeason, loadActivities, loadAwards, loadQuests, type StoredActivity, type StoredQuest } from './game.js';
 import type { ActivityView, CriterionView, HomeView, ProgressView, QuestView, RecapView } from './home-types.js';
@@ -80,21 +81,23 @@ export class HomeService {
     const day = localDayWindow(today, tz);
     const week = localWeekWindow(weekStartKey(today), tz);
 
-    const [awards, weekActivities, reviewable, quests, priorities, season] = await Promise.all([
+    const [awards, weekActivities, reviewable, quests, priorities, season, badgeFacts] = await Promise.all([
       loadAwards(this.db, account.id),
       loadActivities(this.db, account.id, week.start, week.end),
       loadActivities(this.db, account.id, now - 7 * DAY, now + 1),
       loadQuests(this.db, account.id, day.start, day.end),
       this.priorities(account.id, today),
       currentSeason(this.db, account.id, now),
+      loadBadgeFacts(this.db, account.id),
     ]);
     const awardFor = latestActivityAwards(awards);
     const view = (activity: StoredActivity) => activityView(activity, awardFor.get(activity.id) ?? null);
+    const progress = progressView(awards);
 
     return {
       account: { displayName: account.displayName, timeZone: tz },
       today: { dateKey: today, window: day },
-      progress: progressView(awards),
+      progress,
       priorities,
       // Today's quest first, then the week's.
       quests: quests
@@ -117,6 +120,11 @@ export class HomeService {
           reversalReason: award.reversal?.reason ?? null,
         })),
       season,
+      badges: computeBadges({
+        ...badgeFacts,
+        activityAwards: [...awardFor.values()].filter((award) => award.status === 'awarded' || award.status === 'provisional'),
+        progress,
+      }),
     };
   }
 

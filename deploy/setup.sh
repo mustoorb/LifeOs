@@ -42,6 +42,19 @@ yes_no() { # yes_no "Question" Y|N
   [[ $reply =~ ^[Yy] ]]
 }
 
+# ask_matching VAR "Question" default regex "what to type": asks again until the answer matches.
+ask_matching() {
+  local var=$1 prompt=$2 default=$3 pattern=$4 hint=$5 reply
+  while true; do
+    ask reply "$prompt" "$default"
+    if [[ $reply =~ $pattern ]]; then
+      printf -v "$var" '%s' "$reply"
+      return 0
+    fi
+    note "Please type $hint, or press Enter for $default."
+  done
+}
+
 urlencode() { python3 -c 'import sys, urllib.parse; print(urllib.parse.quote(sys.argv[1], safe=""))' "$1"; }
 
 # Logs in to the SMTP server in $1, the way the LifeOS server will. Prints the problem on failure.
@@ -300,10 +313,10 @@ note "Backups go to /var/backups/lifeos at 03:17 UTC each night; the last 14 day
 # ---------------------------------------------------------------------------
 CODES_FILE=''
 if yes_no "Create the founding season and access codes now?" "$( (( PREVIOUS_INSTALL )) && echo N || echo Y)"; then
-  ask SEASON_START "Season start date (YYYY-MM-DD)" "$(date -u +%F)"
-  ask SEASON_WEEKS "Season length in weeks (6-12)" 6
-  ask CODE_COUNT "How many access codes" 30
-  ask CODE_DAYS "Codes expire after how many days" 30
+  ask_matching SEASON_START "Season start date (YYYY-MM-DD)" "$(date -u +%F)" '^[0-9]{4}-[0-9]{2}-[0-9]{2}$' "a date like $(date -u +%F)"
+  ask_matching SEASON_WEEKS "Season length in weeks (6-12)" 6 '^([6-9]|1[0-2])$' "a number from 6 to 12"
+  ask_matching CODE_COUNT "How many access codes" 30 '^[1-9][0-9]{0,2}$' "a number from 1 to 999"
+  ask_matching CODE_DAYS "Codes expire after how many days" 30 '^[1-9][0-9]{0,2}$' "a number of days, like 30"
   lifeos admin create-season --id founding-1 --name "Founding Season" \
     --starts "$SEASON_START" --weeks "$SEASON_WEEKS" --campaigns founding ||
     warn "Couldn't create the season (it may exist already). Codes will still join founding-1 if it exists."

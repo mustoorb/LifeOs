@@ -149,6 +149,7 @@ jobs:
         run: |
           curl -fsk https://localhost/v1/health
           curl -fsk -D - -o /dev/null https://localhost/ | grep -i "content-security-policy: default-src 'none'"
+          curl -fsk -D - -o /dev/null https://localhost/fonts/urbanist-400.woff2 | grep -i "content-type: font/woff2"
           curl -fs -o /dev/null -w '%{http_code}' http://localhost/ | grep -q 308
           curl -fsk -X POST -H 'content-type: application/json' -d '{"email":"ci@example.com"}' https://localhost/v1/auth/start
           sleep 2

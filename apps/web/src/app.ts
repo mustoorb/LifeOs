@@ -2,7 +2,7 @@ import type { ActivityView, BadgeView, HomeView, ProgressView, QuestView, RecapV
 import { ApiError, api, type Correction } from './api.js';
 import { celebrate, floatXp, takeChanges } from './celebrate.js';
 import { BADGE_ICON, QUEST_ICON, constellation, emblem, miniEclipse, rankFor } from './cosmic.js';
-import { h, store } from './dom.js';
+import { h, store, svg } from './dom.js';
 import { play, setSound, soundOn } from './sound.js';
 
 const header = document.getElementById('header')!;
@@ -61,6 +61,13 @@ const EVIDENCE_LABELS: Record<string, string> = {
   corroborated: 'Corroborated',
   reviewed: 'Reviewed',
 };
+const EVIDENCE_TONE: Record<string, string> = {
+  self_reported: '',
+  observed: 'ok',
+  connected: 'info',
+  corroborated: 'ok',
+  reviewed: 'ok',
+};
 const MANUAL_TYPES = ['workout', 'walk', 'run', 'ride', 'outdoor_session', 'learning_session', 'creative_session'];
 const CORRECTABLE_TYPES = ['digital_session', 'learning_session', 'creative_session', ...MANUAL_TYPES.slice(0, 5)];
 
@@ -116,12 +123,13 @@ function route(): Route {
 let account: HomeView['account'] | null = null;
 
 function soundToggle(): HTMLButtonElement {
-  const el = h('button', { class: 'quiet', attrs: { type: 'button' } });
+  const el = h('button', { class: 'orb', attrs: { type: 'button' } });
   const paint = () => {
     const on = soundOn();
-    el.textContent = on ? '🔊 Sound' : '🔇 Sound';
+    el.textContent = on ? '🔊' : '🔇';
     el.setAttribute('aria-pressed', String(on));
-    el.title = on ? 'Turn sound effects off' : 'Turn sound effects on';
+    el.setAttribute('aria-label', on ? 'Sound effects on. Turn them off' : 'Sound effects off. Turn them on');
+    el.title = on ? 'Sound on' : 'Sound off';
   };
   el.addEventListener('click', () => {
     setSound(!soundOn());
@@ -132,24 +140,34 @@ function soundToggle(): HTMLButtonElement {
   return el;
 }
 
+const initials = (name: string) =>
+  name
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((part) => part[0]!.toUpperCase())
+    .join('') || '·';
+
 function renderHeader(signedIn: boolean): void {
   const current = route().view;
   const link = (href: string, label: string, view: Route['view']) => h('a', { attrs: { href, ...(current === view ? { 'aria-current': 'page' } : {}) } }, label);
-  const parts: (Node | null)[] = [
-    h('span', { class: 'brand' }, miniEclipse(), h('span', {}, 'ECLIPSE')),
-    signedIn ? h('nav', { class: 'nav', attrs: { 'aria-label': 'Main' } }, link('#/', 'Today', 'today'), link('#/week', 'Week', 'week'), link('#/badges', 'Badges', 'badges')) : null,
-    h('span', { class: 'spacer' }),
-    signedIn ? soundToggle() : null,
-    signedIn && account ? h('span', { class: 'who' }, account.displayName) : null,
-    signedIn
-      ? button('Sign out', async () => {
-          await api.logout();
-          account = null;
-          showSignIn();
-        }, 'quiet')
-      : null,
-  ];
-  header.replaceChildren(...parts.filter((part): part is Node => part !== null));
+  header.replaceChildren(
+    h('span', { class: 'brand' }, miniEclipse(), h('span', {}, 'Eclipse')),
+    signedIn ? h('nav', { class: 'nav', attrs: { 'aria-label': 'Main' } }, link('#/', 'Today', 'today'), link('#/week', 'Week', 'week'), link('#/badges', 'Badges', 'badges')) : h('span', {}),
+    h(
+      'div',
+      { class: 'header-actions' },
+      signedIn ? soundToggle() : null,
+      signedIn && account ? h('span', { class: 'orb white', attrs: { title: account.displayName, 'aria-label': `Signed in as ${account.displayName}`, role: 'img' } }, initials(account.displayName)) : null,
+      signedIn
+        ? button('Sign out', async () => {
+            await api.logout();
+            account = null;
+            showSignIn();
+          }, 'quiet')
+        : null,
+    ),
+  );
 }
 
 async function render(): Promise<void> {
@@ -169,7 +187,7 @@ const WELCOME: ProgressView = { totalXp: 0, heldXp: 0, level: 1, xpIntoLevel: 33
 function authCard(title: string, intro: Node | string, ...rest: Node[]): HTMLElement {
   const art = emblem(WELCOME, { label: false });
   art.setAttribute('aria-hidden', 'true');
-  return h('section', { class: 'card auth' }, art, h('h1', {}, title), h('p', { class: 'muted' }, intro), ...rest);
+  return h('section', { class: 'card auth rise-in' }, art, h('h1', {}, title), h('p', { class: 'muted' }, intro), ...rest);
 }
 
 function showSignIn(): void {
@@ -242,52 +260,137 @@ function showRegister(registrationToken: string, termsVersion: string, email: st
 
 // --- today ---------------------------------------------------------------------------------
 
+function greeting(): string {
+  const hour = new Date().getHours();
+  return hour < 5 ? 'Good night' : hour < 12 ? 'Good morning' : hour < 18 ? 'Good afternoon' : 'Good evening';
+}
+
+/** A light numeral with a small muted unit. */
+function figure(value: string | number, unit: string | null, size: 'f-96' | 'f-56' | 'f-40' | 'f-26' = 'f-40', dim?: string): HTMLElement {
+  return h('div', { class: `figure ${size}` }, String(value), dim ? h('span', { class: 'dim' }, dim) : null, unit ? h('span', { class: 'unit' }, unit) : null);
+}
+
+function kpi(tag: string, value: HTMLElement, caption: string, tagClass = ''): HTMLElement {
+  return h('div', { class: 'kpi' }, h('span', { class: `tag ${tagClass}` }, tag), value, h('span', { class: 'caption' }, caption));
+}
+
+function cardHead(title: string, sub: string | null, right?: Node | null): HTMLElement {
+  return h('div', { class: 'card-head' }, h('div', {}, h('h2', {}, title), sub ? h('p', { class: 'sub' }, sub) : null), right ?? null);
+}
+
+function openOrb(href: string, label: string): HTMLElement {
+  return h('a', { class: 'orb sm', attrs: { href, 'aria-label': label, title: label } }, '↗');
+}
+
+const liveAward = (a: ActivityView) => a.userConfirmation !== 'discarded' && a.award && (a.award.status === 'awarded' || a.award.status === 'provisional');
+
 async function showToday(): Promise<void> {
   const view = await api.home();
   account = view.account;
   renderHeader(true);
   const refresh = () => run(showToday);
   const changes = takeChanges(view);
-  const hero = heroCard(view, changes.previousFraction);
+  const p = view.progress;
+  const rank = rankFor(p.level);
+  const earned = view.badges.filter((b) => b.earned).length;
+  const todayXp = view.activities.filter(liveAward).reduce((sum, a) => sum + (a.award?.xp ?? 0), 0);
+  const daysLeft = view.season ? Math.max(0, Math.ceil((view.season.endsAt - Date.now()) / 86_400_000)) : null;
+  const level = levelCard(view, changes.previousFraction);
+
   main.replaceChildren(
     h(
       'div',
-      { class: 'stack' },
-      hero,
+      { class: 'page' },
       h(
         'div',
-        { class: 'grid' },
-        h('div', { class: 'stack' }, prioritiesCard(view, refresh), questsCard(view, refresh), reviewCard(view, refresh), activityCard(view, refresh), logCard(refresh)),
-        h('div', { class: 'stack' }, skillsCard(view), badgesCard(view.badges), awardsCard(view)),
+        { class: 'titlebar' },
+        h(
+          'div',
+          {},
+          h('p', { class: 'eyebrow' }, [dayLabel(view.today.dateKey, 'long'), view.season ? `${view.season.name} · ${daysLeft === 1 ? '1 day' : `${daysLeft} days`} left` : null].filter(Boolean).join(' · ')),
+          h('h1', { class: 'display' }, `${greeting()}, `, h('b', {}, view.account.displayName)),
+        ),
+        h(
+          'div',
+          { class: 'kpis' },
+          kpi('Level', figure(p.level, null), rank.name, 'white'),
+          kpi('XP', figure(p.totalXp, 'XP'), todayXp > 0 ? `+${todayXp} today` : 'Nothing yet today', 'gold'),
+          kpi('Badges', figure(earned, null, 'f-40', ` / ${view.badges.length}`), 'Real milestones'),
+        ),
+      ),
+      h(
+        'div',
+        { class: 'bento' },
+        level,
+        todayWidget(view, todayXp),
+        prioritiesCard(view, refresh),
+        questsCard(view, refresh),
+        skillsCard(view),
+        reviewCard(view, refresh),
+        activityCard(view, refresh),
+        badgesCard(view.badges),
+        logCard(refresh),
+        awardsCard(view),
       ),
     ),
   );
-  if (changes.xpGained && changes.xpGained > 0) floatXp(hero.querySelector('.emblem') ?? hero, changes.xpGained);
+  if (changes.xpGained && changes.xpGained > 0) floatXp(level.querySelector('.emblem') ?? level, changes.xpGained);
   if (changes.moments.length) window.setTimeout(() => celebrate(changes.moments), changes.xpGained ? 900 : 200);
 }
 
-function heroCard(view: HomeView, from: number | null): HTMLElement {
+/** A tick ruler with a glowing needle: minor ticks every 6, major every 30. */
+function tickRuler(fraction: number, labels: readonly string[], aria: string): HTMLElement {
+  const lines: SVGElement[] = [];
+  for (let x = 1; x <= 299; x += 6) {
+    const major = (x - 1) % 30 === 0;
+    lines.push(svg('line', { x1: x, x2: x, y1: major ? 4 : 12, y2: 28, stroke: major ? '#a1a1aa' : '#6b6b74', 'stroke-width': 1, 'vector-effect': 'non-scaling-stroke' }));
+  }
+  const pct = Math.round(Math.min(1, Math.max(0, fraction)) * 1000) / 10;
+  return h(
+    'div',
+    { attrs: { role: 'img', 'aria-label': aria } },
+    h('div', { class: 'ticks' }, svg('svg', { viewBox: '0 0 300 28', preserveAspectRatio: 'none', 'aria-hidden': 'true' }, ...lines), h('span', { class: 'needle', style: { left: `${pct}%` } })),
+    h('div', { class: 'tick-labels', attrs: { 'aria-hidden': 'true' } }, ...labels.map((label) => h('span', {}, label))),
+  );
+}
+
+function levelCard(view: HomeView, from: number | null): HTMLElement {
   const p = view.progress;
   const rank = rankFor(p.level);
-  const todayMinutes = view.activities.filter((a) => a.userConfirmation !== 'discarded').reduce((sum, a) => sum + a.minutes, 0);
-  const questsDone = view.quests.filter((q) => q.status === 'complete').length;
-  const earned = view.badges.filter((b) => b.earned).length;
-  const daysLeft = view.season ? Math.max(0, Math.ceil((view.season.endsAt - Date.now()) / 86_400_000)) : null;
-  const stat = (label: string, value: string) => h('div', { class: 'stat' }, h('div', { class: 'label' }, label), h('div', { class: 'value' }, value));
+  const fraction = p.xpIntoLevel / Math.max(1, p.xpForNextLevel);
   return h(
     'section',
-    { class: 'card hero', attrs: { 'data-testid': 'level' } },
-    emblem(p, from === null ? {} : { from }),
+    { class: 'card level-card span-4', attrs: { 'data-testid': 'level' } },
+    cardHead('Level progress', rank.next ? `${rank.name} · ${rank.next.name} at level ${rank.next.level}` : rank.name, openOrb('#/badges', 'Open badges')),
+    h('div', { class: 'emblem-wrap' }, emblem(p, from === null ? {} : { from })),
+    tickRuler(fraction, [`Lv ${p.level}`, `${Math.round(fraction * 100)}%`, `Lv ${p.level + 1}`], `${p.xpIntoLevel} of ${p.xpForNextLevel} XP to level ${p.level + 1}`),
     h(
       'div',
-      { class: 'hero-info' },
-      h('h1', {}, view.account.displayName),
-      h('div', { class: 'rank' }, `✦ ${rank.name}`, rank.next ? h('span', { class: 'next-rank' }, `· ${rank.next.name} at level ${rank.next.level}`) : null),
-      h('div', { class: 'row between small' }, h('span', { class: 'muted' }, `${p.xpIntoLevel} / ${p.xpForNextLevel} XP to level ${p.level + 1}`), h('span', { class: 'xp' }, `${p.totalXp} XP`)),
-      meter(p.xpIntoLevel / Math.max(1, p.xpForNextLevel), 'Progress to next level'),
-      p.heldXp > 0 ? h('p', { class: 'small warn' }, `${p.heldXp} XP is waiting on your review below.`) : null,
-      view.season ? h('p', { class: 'small muted', style: { margin: '4px 0 0' } }, `🛰 ${view.season.name} · ${daysLeft === 1 ? '1 day' : `${daysLeft} days`} left`) : null,
-      h('div', { class: 'stats' }, stat('Today', duration(todayMinutes)), stat('Quests done', `${questsDone} / ${view.quests.length}`), stat('Badges', `${earned} / ${view.badges.length}`)),
+      { class: 'card-foot' },
+      figure(p.xpIntoLevel, 'XP', 'f-26', ` / ${p.xpForNextLevel}`),
+      p.heldXp > 0 ? h('span', { class: 'status warn' }, `${p.heldXp} XP waiting on review`) : h('span', { class: 'status gold' }, `to level ${p.level + 1}`),
+    ),
+  );
+}
+
+function todayWidget(view: HomeView, todayXp: number): HTMLElement {
+  const minutes = view.activities.filter((a) => a.userConfirmation !== 'discarded').reduce((sum, a) => sum + a.minutes, 0);
+  const total = Math.round(minutes);
+  const big = total >= 60 ? `${Math.floor(total / 60)}:${String(total % 60).padStart(2, '0')}` : String(total);
+  const sessions = view.activities.filter((a) => a.userConfirmation !== 'discarded').length;
+  const focus = view.activities.filter((a) => a.userConfirmation !== 'discarded' && a.tags.includes('focus')).length;
+  return h(
+    'section',
+    { class: 'card aura-gold today-widget span-4', attrs: { 'data-testid': 'today' } },
+    cardHead('Today', 'Time on the record', openOrb('#/week', 'Open your week')),
+    h('div', { class: 'dot-figure', attrs: { 'aria-label': `${duration(total)} today` } }, big, h('span', { class: 'unit' }, total >= 60 ? 'h' : 'min')),
+    h(
+      'div',
+      { class: 'pane kv-grid' },
+      h('div', { class: 'kv' }, h('span', { class: 'k' }, 'Sessions'), h('span', { class: 'v' }, sessions)),
+      h('div', { class: 'kv' }, h('span', { class: 'k' }, 'XP earned'), h('span', { class: 'v' }, `+${todayXp}`)),
+      h('div', { class: 'kv' }, h('span', { class: 'k' }, 'Focus blocks'), h('span', { class: 'v' }, focus)),
+      h('div', { class: 'kv' }, h('span', { class: 'k' }, 'Quests done'), h('span', { class: 'v' }, `${view.quests.filter((q) => q.status === 'complete').length} / ${view.quests.length}`)),
     ),
   );
 }
@@ -306,7 +409,7 @@ function prioritiesCard(view: HomeView, refresh: () => Promise<void>): HTMLEleme
       {},
       box,
       h('span', { class: `grow${p.done ? ' done-text' : ''}` }, p.text),
-      p.skill ? h('span', { class: 'pill' }, cap(p.skill)) : null,
+      p.skill ? h('span', { class: 'tag outline' }, cap(p.skill)) : null,
       button('Remove', async () => {
         await api.deletePriority(p.id);
         await refresh();
@@ -315,10 +418,10 @@ function prioritiesCard(view: HomeView, refresh: () => Promise<void>): HTMLEleme
   });
   let form: HTMLElement | null = null;
   if (view.priorities.length < 3) {
-    const text = h('input', { class: 'grow', attrs: { maxlength: '120', placeholder: 'What matters today?', 'aria-label': 'New priority' } });
+    const text = h('input', { attrs: { maxlength: '120', placeholder: 'What matters today?', 'aria-label': 'New priority' } });
     const skills = view.progress.domains.flatMap((d) => d.skills.map((s) => [s.skill, cap(s.skill)] as [string, string]));
     const skill = select([['', 'No skill'], ...skills], '', 'Skill');
-    form = h('form', { class: 'row priority-form', style: { 'margin-top': '10px' } }, text, skill, h('button', { attrs: { type: 'submit' } }, 'Add'));
+    form = h('form', { class: 'priority-form' }, text, skill, h('button', { attrs: { type: 'submit' } }, 'Add'));
     form.addEventListener('submit', (event) => {
       event.preventDefault();
       if (!text.value.trim()) return;
@@ -331,10 +434,13 @@ function prioritiesCard(view: HomeView, refresh: () => Promise<void>): HTMLEleme
   const done = view.priorities.filter((p) => p.done).length;
   return h(
     'section',
-    { class: 'card', attrs: { 'data-testid': 'priorities' } },
-    h('div', { class: 'row between' }, h('h2', {}, h('span', { class: 'icon', attrs: { 'aria-hidden': 'true' } }, '🪐'), dayLabel(view.today.dateKey, 'long')), view.priorities.length ? h('span', { class: `pill${done === view.priorities.length ? ' good' : ''}` }, `${done} / ${view.priorities.length} done`) : null),
-    h('p', { class: 'sub' }, 'Today’s orbit: up to three priorities. Fewer is fine.'),
-    items.length ? h('ul', { class: 'list' }, ...items) : null,
+    { class: 'card span-4', attrs: { 'data-testid': 'priorities' } },
+    cardHead(
+      'Today’s orbit',
+      'Up to three priorities. Fewer is fine.',
+      view.priorities.length ? h('span', { class: `status${done === view.priorities.length ? ' ok' : ''}` }, `${done} of ${view.priorities.length}`) : null,
+    ),
+    items.length ? h('ul', { class: 'list' }, ...items) : h('p', { class: 'empty' }, 'Nothing planned yet.'),
     form,
   );
 }
@@ -342,34 +448,37 @@ function prioritiesCard(view: HomeView, refresh: () => Promise<void>): HTMLEleme
 function questCard(quest: QuestView, refresh: () => Promise<void>): HTMLElement {
   const status: Record<QuestView['status'], [string, string]> = {
     active: ['In progress', ''],
-    complete: [quest.provisional ? '✓ Complete · self-reported' : '✓ Complete', 'good'],
+    complete: [quest.provisional ? 'Complete · self-reported' : 'Complete', 'ok'],
     skipped: ['Skipped', ''],
     ended: ['Ended', ''],
   };
   const [label, tone] = status[quest.status];
   return h(
     'div',
-    { class: `mission${quest.status === 'complete' ? ' done' : ''}`, attrs: { 'data-quest': quest.template } },
-    h('div', { class: 'row between' }, h('span', { class: 'title' }, h('span', { class: 'badge-icon', attrs: { 'aria-hidden': 'true' } }, QUEST_ICON[quest.template] ?? '🚀'), quest.title), h('span', { class: `pill ${tone}` }, label)),
-    h('span', { class: 'small muted' }, quest.intent),
+    { class: 'quest', attrs: { 'data-quest': quest.template } },
+    h('span', { class: 'orb', attrs: { 'aria-hidden': 'true' } }, QUEST_ICON[quest.template] ?? '🚀'),
+    h('div', { class: 'row between' }, h('span', { class: 'q-title' }, quest.title), h('span', { class: `status ${tone}` }, label)),
     h(
       'div',
-      { class: 'criteria' },
-      ...quest.criteria.map((c) =>
-        h('div', { class: 'criterion' }, h('span', {}, cap(c.unit)), h('span', { class: 'xp' }, `${c.current} / ${c.required}`), meter(c.current / c.required, `${quest.title}: ${c.unit}`)),
+      { class: 'q-body', style: { 'grid-column': '2' } },
+      h('p', { class: 'sub' }, quest.intent),
+      h(
+        'div',
+        { class: 'criteria' },
+        ...quest.criteria.map((c) => h('div', { class: 'criterion' }, h('span', {}, cap(c.unit)), h('span', { class: 'val' }, `${c.current} / ${c.required}`), meter(c.current / c.required, `${quest.title}: ${c.unit}`))),
       ),
-    ),
-    h(
-      'div',
-      { class: 'row between small' },
-      h('span', { class: 'pill glow' }, `+${quest.reward.xp} ${cap(quest.reward.skill)} XP`),
-      quest.minEvidence === 'self_reported' ? h('span', { class: 'muted grow' }, 'Manual entries count') : h('span', { class: 'grow' }),
-      quest.status === 'active'
-        ? button('Skip', async () => {
-            await api.skipQuest(quest.id);
-            await refresh();
-          }, 'quiet')
-        : null,
+      h(
+        'div',
+        { class: 'row' },
+        h('span', { class: 'tag outline' }, `+${quest.reward.xp} ${cap(quest.reward.skill)} XP`),
+        quest.minEvidence === 'self_reported' ? h('span', { class: 'caption grow' }, 'Manual entries count') : h('span', { class: 'grow' }),
+        quest.status === 'active'
+          ? button('Skip', async () => {
+              await api.skipQuest(quest.id);
+              await refresh();
+            }, 'quiet')
+          : null,
+      ),
     ),
   );
 }
@@ -377,10 +486,9 @@ function questCard(quest: QuestView, refresh: () => Promise<void>): HTMLElement 
 function questsCard(view: HomeView, refresh: () => Promise<void>): HTMLElement {
   return h(
     'section',
-    { class: 'card', attrs: { 'data-testid': 'quests' } },
-    h('h2', {}, h('span', { class: 'icon', attrs: { 'aria-hidden': 'true' } }, '🚀'), 'Quests'),
-    h('p', { class: 'sub' }, 'Today’s and this week’s. Skipping is always fine.'),
-    ...view.quests.map((quest) => questCard(quest, refresh)),
+    { class: 'card span-7', attrs: { 'data-testid': 'quests' } },
+    cardHead('Quests', 'Today’s and this week’s. Skipping is always fine.', h('span', { class: 'tag outline' }, `${view.quests.filter((q) => q.status === 'complete').length} of ${view.quests.length} done`)),
+    h('div', {}, ...view.quests.map((quest) => questCard(quest, refresh))),
   );
 }
 
@@ -406,9 +514,8 @@ function reviewCard(view: HomeView, refresh: () => Promise<void>): HTMLElement |
   if (view.review.length === 0) return null;
   return h(
     'section',
-    { class: 'card', attrs: { 'data-testid': 'review' } },
-    h('h2', {}, h('span', { class: 'icon', attrs: { 'aria-hidden': 'true' } }, '🔭'), 'Needs your review'),
-    h('p', { class: 'sub' }, 'These are held, not counted, until you look. Nothing is assumed to be cheating.'),
+    { class: 'card span-12', attrs: { 'data-testid': 'review' } },
+    cardHead('Needs your review', 'These are held, not counted, until you look. Nothing is assumed to be cheating.', h('span', { class: 'status warn' }, `${view.review.length} waiting`)),
     h(
       'ul',
       { class: 'list' },
@@ -420,7 +527,7 @@ function reviewCard(view: HomeView, refresh: () => Promise<void>): HTMLElement |
             'div',
             { class: 'grow' },
             h('div', {}, `${typeLabel(activity.type)} · ${duration(activity.minutes)}`, h('span', { class: 'time' }, ` · ${dayLabel(new Date(activity.start).toISOString().slice(0, 10))} ${clock(activity.start, view.account.timeZone)}`)),
-            ...activity.reviewReasons.map((reason) => h('div', { class: 'small warn' }, reason)),
+            ...activity.reviewReasons.map((reason) => h('div', { class: 'status warn', style: { 'margin-top': '4px' } }, reason)),
           ),
           correctionControls(activity, refresh, true),
         ),
@@ -438,7 +545,7 @@ function activityCard(view: HomeView, refresh: () => Promise<void>): HTMLElement
       ? h('span', { class: 'muted small' }, discarded ? 'Discarded' : 'No XP')
       : award.status === 'reversed'
         ? h('span', { class: 'muted small' }, 'Reversed')
-        : h('span', { class: 'xp' }, `${award.status === 'pending' ? '(' : ''}+${award.xp} XP${award.status === 'pending' ? ' held)' : ''}`);
+        : h('span', { class: 'xp' }, award.status === 'pending' ? `+${award.xp} XP held` : `+${award.xp} XP`);
     return h(
       'li',
       {},
@@ -449,8 +556,8 @@ function activityCard(view: HomeView, refresh: () => Promise<void>): HTMLElement
           'summary',
           {},
           h('span', { class: 'time' }, `${clock(activity.start, tz)}–${clock(activity.end, tz)}`),
-          h('span', { class: 'grow' }, typeLabel(activity.type), activity.category ? h('span', { class: 'muted' }, ` · ${cap(activity.category)}`) : null, activity.tags.includes('focus') ? h('span', { class: 'pill', style: { 'margin-left': '6px' } }, 'Focus') : null),
-          h('span', { class: 'pill' }, EVIDENCE_LABELS[activity.evidenceLevel] ?? activity.evidenceLevel),
+          h('span', { class: 'grow' }, typeLabel(activity.type), activity.category ? h('span', { class: 'muted' }, ` · ${cap(activity.category)}`) : null, activity.tags.includes('focus') ? h('span', { class: 'tag outline', style: { 'margin-left': '8px' } }, 'Focus') : null),
+          h('span', { class: `status ${EVIDENCE_TONE[activity.evidenceLevel] ?? ''}` }, EVIDENCE_LABELS[activity.evidenceLevel] ?? activity.evidenceLevel),
           h('span', { class: 'muted small' }, duration(activity.minutes)),
           xp,
         ),
@@ -459,16 +566,15 @@ function activityCard(view: HomeView, refresh: () => Promise<void>): HTMLElement
           { class: 'why' },
           ...(award ? award.explanation.map((line) => h('p', {}, line)) : [h('p', {}, 'No XP for this activity.')]),
           h('p', { class: 'muted' }, `Source: ${activity.sources.map((s) => (s === 'desktop-companion' ? 'LifeOS Companion' : s === 'manual-log' ? 'logged by you' : s)).join(', ')}`),
-          discarded ? null : h('div', { style: { 'margin-top': '8px' } }, correctionControls(activity, refresh, false)),
+          discarded ? null : h('div', { style: { 'margin-top': '12px' } }, correctionControls(activity, refresh, false)),
         ),
       ),
     );
   });
   return h(
     'section',
-    { class: 'card', attrs: { 'data-testid': 'activity' } },
-    h('h2', {}, h('span', { class: 'icon', attrs: { 'aria-hidden': 'true' } }, '🛰'), 'Flight log'),
-    h('p', { class: 'sub' }, 'Today’s activity. Open an entry to see exactly how its XP was worked out, or to correct it.'),
+    { class: 'card span-7', attrs: { 'data-testid': 'activity' } },
+    cardHead('Flight log', 'Today’s activity. Open an entry to see exactly how its XP was worked out, or to correct it.'),
     items.length ? h('ul', { class: 'list' }, ...items) : h('p', { class: 'empty' }, 'Nothing yet today. Focus sessions from LifeOS Companion appear here a few minutes after they end.'),
   );
 }
@@ -508,9 +614,8 @@ function logCard(refresh: () => Promise<void>): HTMLElement {
   });
   return h(
     'section',
-    { class: 'card' },
-    h('h2', {}, h('span', { class: 'icon', attrs: { 'aria-hidden': 'true' } }, '✍️'), 'Log something by hand'),
-    h('p', { class: 'sub' }, 'For workouts, walks and anything away from the computer. Manual entries count for your own progress, not for rankings.'),
+    { class: 'card span-7' },
+    cardHead('Log something by hand', 'For workouts, walks and anything away from the computer. Manual entries count for your own progress, not for rankings.'),
     form,
   );
 }
@@ -531,21 +636,20 @@ function skillsCard(view: HomeView): HTMLElement {
     ),
   );
   const sky = constellation(view.progress, { show: showTip, hide: hideTip });
-  const toggle = h('button', { class: 'link small', attrs: { type: 'button', 'aria-expanded': 'false' } }, 'Show as list');
+  const toggle = h('button', { class: 'quiet', attrs: { type: 'button', 'aria-expanded': 'false' } }, 'List');
   toggle.addEventListener('click', () => {
     const showList = list.hidden;
     list.hidden = !showList;
     sky.style.display = showList ? 'none' : '';
     toggle.setAttribute('aria-expanded', String(showList));
-    toggle.textContent = showList ? 'Show the sky' : 'Show as list';
+    toggle.textContent = showList ? 'Sky' : 'List';
   });
   const lit = view.progress.domains.flatMap((d) => d.skills).filter((s) => s.xp > 0).length;
   const total = view.progress.domains.flatMap((d) => d.skills).length;
   return h(
     'section',
-    { class: 'card', attrs: { 'data-testid': 'skills' } },
-    h('div', { class: 'row between' }, h('h2', {}, h('span', { class: 'icon', attrs: { 'aria-hidden': 'true' } }, '✨'), 'Skills'), toggle),
-    h('p', { class: 'sub' }, `${lit} of ${total} stars lit. Each skill shines brighter as it levels up.`),
+    { class: 'card span-5', attrs: { 'data-testid': 'skills' } },
+    cardHead('Skills', `${lit} of ${total} stars lit. Each grows brighter as it levels up.`, toggle),
     sky,
     list,
   );
@@ -553,14 +657,15 @@ function skillsCard(view: HomeView): HTMLElement {
 
 function medal(badge: BadgeView, compact = false): HTMLElement {
   const label = `${badge.name}: ${badge.earned ? 'earned' : `${badge.current} of ${badge.target}`}. ${badge.description}`;
+  if (compact) {
+    return h('div', { class: `medal${badge.earned ? ' earned' : ''}`, attrs: { role: 'img', 'aria-label': label, title: label } }, h('div', { class: 'disc', attrs: { 'aria-hidden': 'true' } }, BADGE_ICON[badge.id] ?? '🏅'));
+  }
   return h(
     'div',
-    { class: `medal${badge.earned ? ' earned' : ''}`, attrs: compact ? { role: 'img', 'aria-label': label, title: label } : { 'data-badge': badge.id } },
-    h('div', { class: 'disc', attrs: { 'aria-hidden': 'true' } }, BADGE_ICON[badge.id] ?? '🏅'),
-    compact ? null : h('div', { class: 'name' }, badge.name),
-    compact ? null : h('div', { class: 'desc' }, badge.description),
-    compact || badge.earned ? null : meter(badge.current / badge.target, `${badge.name} progress`),
-    compact ? null : h('div', { class: 'small muted' }, badge.earned ? 'Earned' : `${badge.current} / ${badge.target}`),
+    { class: `medal${badge.earned ? ' earned' : ''}`, attrs: { 'data-badge': badge.id } },
+    h('div', { class: 'row between', style: { width: '100%' } }, h('div', { class: 'disc', attrs: { 'aria-hidden': 'true' } }, BADGE_ICON[badge.id] ?? '🏅'), h('span', { class: `status${badge.earned ? ' gold' : ''}` }, badge.earned ? 'Earned' : 'Locked')),
+    h('div', {}, h('div', { class: 'name' }, badge.name), h('div', { class: 'desc' }, badge.description)),
+    badge.earned ? null : h('div', { class: 'progress' }, h('div', { class: 'row between caption' }, h('span', {}, 'Progress'), h('span', { class: 'xp' }, `${badge.current} / ${badge.target}`)), meter(badge.current / badge.target, `${badge.name} progress`)),
   );
 }
 
@@ -570,27 +675,27 @@ function badgesCard(badges: readonly BadgeView[]): HTMLElement {
   const shown = [...badges].sort((a, b) => Number(b.earned) - Number(a.earned) || b.current / b.target - a.current / a.target).slice(0, 6);
   return h(
     'section',
-    { class: 'card', attrs: { 'data-testid': 'badges' } },
-    h('div', { class: 'row between' }, h('h2', {}, h('span', { class: 'icon', attrs: { 'aria-hidden': 'true' } }, '🏅'), 'Badges'), h('a', { class: 'small', attrs: { href: '#/badges' } }, `All ${badges.length} ›`)),
-    h('p', { class: 'sub' }, `${earned} earned. Every badge is a real milestone.`),
+    { class: 'card span-5', attrs: { 'data-testid': 'badges' } },
+    cardHead('Badges', 'Every badge is a real milestone.', openOrb('#/badges', `All ${badges.length} badges`)),
     h('div', { class: 'badges compact' }, ...shown.map((b) => medal(b, true))),
+    h('div', { class: 'card-foot' }, figure(earned, null, 'f-40', ` / ${badges.length}`), h('span', { class: 'caption' }, 'earned so far')),
   );
 }
 
 function awardsCard(view: HomeView): HTMLElement {
   return h(
     'section',
-    { class: 'card' },
-    h('h2', {}, h('span', { class: 'icon', attrs: { 'aria-hidden': 'true' } }, '⚡'), 'Recent XP'),
+    { class: 'card span-5' },
+    cardHead('Recent XP', 'Always with its reasons.'),
     view.recentAwards.length
       ? h(
           'ul',
           { class: 'list' },
-          ...view.recentAwards.slice(0, 8).map((award) =>
+          ...view.recentAwards.slice(0, 6).map((award) =>
             h(
               'li',
               { class: 'small' },
-              h('div', { class: 'grow' }, award.explanation[0] ?? '', award.status === 'reversed' ? h('div', { class: 'muted' }, `Reversed: ${award.reversalReason ?? ''}`) : null),
+              h('div', { class: 'grow' }, award.explanation[0] ?? '', award.status === 'reversed' ? h('div', { class: 'caption' }, `Reversed: ${award.reversalReason ?? ''}`) : null),
               h('span', { class: award.status === 'reversed' ? 'muted' : 'xp' }, award.status === 'reversed' ? `−${award.xp}` : `+${award.xp}`),
             ),
           ),
@@ -607,12 +712,22 @@ async function showBadges(): Promise<void> {
   renderHeader(true);
   const changes = takeChanges(view);
   const earned = view.badges.filter((b) => b.earned).length;
+  const next = [...view.badges].filter((b) => !b.earned).sort((a, b) => b.current / b.target - a.current / a.target)[0];
   main.replaceChildren(
     h(
-      'section',
-      { class: 'card', attrs: { 'data-testid': 'badge-list' } },
-      h('h2', {}, h('span', { class: 'icon', attrs: { 'aria-hidden': 'true' } }, '🏅'), `Badges · ${earned} of ${view.badges.length}`),
-      h('p', { class: 'sub' }, 'Earned from what really happened. If evidence is corrected or deleted, its badge follows.'),
+      'div',
+      { class: 'page', attrs: { 'data-testid': 'badge-list' } },
+      h(
+        'div',
+        { class: 'titlebar' },
+        h('div', {}, h('p', { class: 'eyebrow' }, 'Earned from what really happened. If evidence is corrected or deleted, its badge follows.'), h('h1', { class: 'display' }, 'Badges')),
+        h(
+          'div',
+          { class: 'kpis' },
+          kpi('Earned', figure(earned, null, 'f-40', ` / ${view.badges.length}`), 'so far', 'gold'),
+          next ? kpi('Closest', figure(Math.round((next.current / next.target) * 100), '%'), next.name, 'white') : null,
+        ),
+      ),
       h('div', { class: 'badges' }, ...view.badges.map((b) => medal(b))),
     ),
   );
@@ -652,28 +767,29 @@ function dayChart(recap: RecapView): HTMLElement {
     h('thead', {}, h('tr', {}, h('th', {}, 'Day'), h('th', {}, 'Tracked'))),
     h('tbody', {}, ...recap.days.map((d) => h('tr', {}, h('td', {}, dayLabel(d.dateKey, 'long')), h('td', {}, duration(d.minutes))))),
   );
-  const toggle = h('button', { class: 'link small', attrs: { type: 'button', 'aria-expanded': 'false' } }, 'Show as table');
+  const toggle = h('button', { class: 'quiet', attrs: { type: 'button', 'aria-expanded': 'false' } }, 'Table');
   toggle.addEventListener('click', () => {
     const show = table.hidden;
     table.hidden = !show;
     toggle.setAttribute('aria-expanded', String(show));
-    toggle.textContent = show ? 'Hide table' : 'Show as table';
+    toggle.textContent = show ? 'Hide table' : 'Table';
   });
   return h(
     'section',
-    { class: 'card', attrs: { 'data-testid': 'days' } },
-    h('div', { class: 'row between' }, h('h2', {}, 'Time tracked each day'), toggle),
+    { class: 'card span-8', attrs: { 'data-testid': 'days' } },
+    cardHead('Time tracked each day', peak.minutes > 0 ? `Most on ${dayLabel(peak.dateKey, 'long')}` : 'Nothing tracked yet', toggle),
     h(
       'div',
       { class: 'columns', attrs: { role: 'img', 'aria-label': `Tracked time per day, most on ${dayLabel(peak.dateKey, 'long')}` } },
       ...recap.days.map((d) => {
-        const height = d.minutes > 0 ? `${Math.max(2, (d.minutes / max) * 100)}%` : '0';
+        const height = d.minutes > 0 ? `${Math.max(2, (d.minutes / max) * 86)}%` : '0';
+        const lit = d === peak && d.minutes > 0;
         const slot = h(
           'div',
           { class: 'slot' },
-          h('div', { class: 'col', style: { height } }),
+          h('div', { class: `col${lit ? ' lit' : ''}`, style: { height } }),
           // Label only the peak; the tooltip and table carry the rest.
-          d === peak && d.minutes > 0 ? h('span', { class: 'cap', style: { bottom: height } }, duration(d.minutes)) : null,
+          lit ? h('span', { class: 'cap', style: { bottom: height } }, duration(d.minutes)) : null,
         );
         return hit(slot, `${dayLabel(d.dateKey, 'long')}: ${duration(d.minutes)}`);
       }),
@@ -687,26 +803,20 @@ function domainChart(recap: RecapView): HTMLElement {
   const max = Math.max(1, ...recap.domains.map((d) => d.minutes));
   return h(
     'section',
-    { class: 'card', attrs: { 'data-testid': 'domains' } },
-    h('h2', {}, 'Where your time went'),
-    h('p', { class: 'sub' }, 'By life domain. XP shown alongside, never on a second axis.'),
+    { class: 'card span-4', attrs: { 'data-testid': 'domains' } },
+    cardHead('Where your time went', 'By life domain, with the XP it earned.'),
     h(
       'div',
       { class: 'hbars' },
       ...recap.domains.map((d) =>
-        h(
-          'div',
-          { class: 'hbar' },
-          h('span', {}, cap(d.domain)),
-          hit(
-            h(
-              'div',
-              { class: 'track' },
-              d.minutes > 0 ? h('div', { class: 'fill', style: { width: `${(d.minutes / max) * 80}%` } }) : null,
-              h('span', { class: 'tip' }, d.minutes > 0 ? `${duration(d.minutes)} · ${d.xp} XP` : '—'),
-            ),
-            `${cap(d.domain)}: ${duration(d.minutes)}, ${d.xp} XP`,
+        hit(
+          h(
+            'div',
+            { class: 'hbar' },
+            h('div', { class: 'head' }, h('span', {}, cap(d.domain)), h('span', { class: 'v' }, d.minutes > 0 ? `${duration(d.minutes)} · ${d.xp} XP` : '—')),
+            meter(d.minutes / max, `${cap(d.domain)} time`),
           ),
+          `${cap(d.domain)}: ${duration(d.minutes)}, ${d.xp} XP`,
         ),
       ),
     ),
@@ -723,11 +833,13 @@ async function showWeek(week?: string): Promise<void> {
   };
   const isCurrent = recap.window.end > Date.now();
   const change = recap.previousWeekMinutes > 0 ? Math.round(((recap.totals.minutes - recap.previousWeekMinutes) / recap.previousWeekMinutes) * 100) : null;
+  const hours = Math.floor(recap.totals.minutes / 60);
+  const mins = Math.round(recap.totals.minutes % 60);
 
   const feedback = h(
     'div',
     { class: 'row', attrs: { 'data-testid': 'feedback' } },
-    h('span', {}, 'Did this recap represent your week?'),
+    h('span', { class: 'grow' }, 'Did this recap represent your week?'),
     ...[true, false].map((accurate) =>
       button(accurate ? 'Yes' : 'Not really', async () => {
         await api.recapFeedback(recap.weekStart, accurate);
@@ -740,31 +852,43 @@ async function showWeek(week?: string): Promise<void> {
   main.replaceChildren(
     h(
       'div',
-      { class: 'stack' },
+      { class: 'page' },
       h(
         'div',
-        { class: 'row between' },
-        h('a', { attrs: { href: `#/week/${shift(-7)}` } }, '‹ Previous week'),
-        h('h1', { style: { margin: '0', 'font-size': '20px' } }, `${dayLabel(recap.weekStart, 'long')} – ${dayLabel(recap.weekEnd, 'long')}`),
-        isCurrent ? h('span', { style: { width: '110px' } }) : h('a', { attrs: { href: `#/week/${shift(7)}` } }, 'Next week ›'),
+        { class: 'titlebar' },
+        h(
+          'div',
+          {},
+          h(
+            'div',
+            { class: 'row', style: { 'margin-bottom': '8px' } },
+            h('a', { class: 'orb sm', attrs: { href: `#/week/${shift(-7)}`, 'aria-label': 'Previous week' } }, '‹'),
+            h('span', { class: 'eyebrow', style: { margin: '0' } }, `${dayLabel(recap.weekStart, 'long')} – ${dayLabel(recap.weekEnd, 'long')}`),
+            isCurrent ? null : h('a', { class: 'orb sm', attrs: { href: `#/week/${shift(7)}`, 'aria-label': 'Next week' } }, '›'),
+          ),
+          h('h1', { class: 'display' }, isCurrent ? 'This week' : 'Your week'),
+        ),
+        h(
+          'div',
+          { class: 'kpis' },
+          kpi('Tracked', h('div', { class: 'figure f-40' }, String(hours), h('span', { class: 'unit' }, 'h'), ` ${String(mins).padStart(2, '0')}`, h('span', { class: 'unit' }, 'm')), change !== null ? `${change >= 0 ? '+' : '−'}${Math.abs(change)}% vs the week before` : 'First week on record', 'white'),
+          kpi('Sessions', figure(recap.totals.sessions, null), 'logged or observed'),
+          kpi('XP', figure(recap.totals.xp, 'XP'), 'earned this week', 'gold'),
+          kpi('Quests', figure(recap.quests.completed, null, 'f-40', ` / ${recap.quests.offered}`), 'completed'),
+        ),
       ),
       h(
         'div',
-        { class: 'tiles' },
-        h('div', { class: 'card tile' }, h('div', { class: 'label' }, 'Time tracked'), h('div', { class: 'value' }, duration(recap.totals.minutes)), change !== null ? h('div', { class: 'delta' }, `${change >= 0 ? '+' : '−'}${Math.abs(change)}% vs the week before`) : null),
-        h('div', { class: 'card tile' }, h('div', { class: 'label' }, 'Sessions'), h('div', { class: 'value' }, recap.totals.sessions)),
-        h('div', { class: 'card tile' }, h('div', { class: 'label' }, 'XP earned'), h('div', { class: 'value' }, recap.totals.xp)),
-        h('div', { class: 'card tile' }, h('div', { class: 'label' }, 'Quests completed'), h('div', { class: 'value' }, `${recap.quests.completed} of ${recap.quests.offered}`)),
-      ),
-      dayChart(recap),
-      domainChart(recap),
-      h(
-        'section',
-        { class: 'card' },
-        h('h2', {}, 'Intent and evidence'),
-        h('p', { class: 'small' }, `Priorities: ${recap.priorities.done} done of ${recap.priorities.planned} planned. Corrections you made: ${recap.corrections}.`),
-        recap.notes.length ? h('ul', { class: 'notes' }, ...recap.notes.map((note) => h('li', {}, note))) : null,
-        h('div', { style: { 'margin-top': '14px' } }, feedback),
+        { class: 'bento' },
+        dayChart(recap),
+        domainChart(recap),
+        h(
+          'section',
+          { class: 'card span-12' },
+          cardHead('Intent and evidence', `Priorities: ${recap.priorities.done} done of ${recap.priorities.planned} planned. Corrections you made: ${recap.corrections}.`),
+          recap.notes.length ? h('ul', { class: 'notes' }, ...recap.notes.map((note) => h('li', {}, note))) : null,
+          h('div', { class: 'pane' }, feedback),
+        ),
       ),
     ),
   );

@@ -29,7 +29,7 @@ export const DOMAIN_COLOR: Record<string, string> = {
   world: '#c98500',
   body: '#d55181',
 };
-const NEUTRAL = '#a99cff';
+const NEUTRAL = '#ecbc44';
 
 /** The domain with the most XP colours the emblem's corona; before any XP it's the brand violet. */
 export function leadingDomain(progress: ProgressView): string | null {
@@ -69,7 +69,7 @@ export function emblem(progress: ProgressView, options: { from?: number; label?:
     r: ringR,
     fill: 'none',
     stroke: `url(#${id}-ring)`,
-    'stroke-width': 7,
+    'stroke-width': 4,
     'stroke-linecap': 'round',
     'stroke-dasharray': circumference,
     'stroke-dashoffset': circumference * (1 - (options.from ?? fraction)),
@@ -87,7 +87,7 @@ export function emblem(progress: ProgressView, options: { from?: number; label?:
       'defs',
       {},
       svg('radialGradient', { id: `${id}-corona` }, svg('stop', { offset: '55%', 'stop-color': color, 'stop-opacity': 0.95 }), svg('stop', { offset: '72%', 'stop-color': color, 'stop-opacity': 0.35 }), svg('stop', { offset: '100%', 'stop-color': color, 'stop-opacity': 0 })),
-      svg('linearGradient', { id: `${id}-ring`, x1: 0, y1: 0, x2: 1, y2: 1 }, svg('stop', { offset: '0%', 'stop-color': '#7b6cff' }), svg('stop', { offset: '60%', 'stop-color': '#a99cff' }), svg('stop', { offset: '100%', 'stop-color': '#ffcf7a' })),
+      svg('linearGradient', { id: `${id}-ring`, x1: 0, y1: 0, x2: 1, y2: 1 }, svg('stop', { offset: '0%', 'stop-color': '#ffffff' }), svg('stop', { offset: '100%', 'stop-color': '#ecbc44' })),
       svg('filter', { id: `${id}-glow`, x: '-50%', y: '-50%', width: '200%', height: '200%' }, svg('feGaussianBlur', { stdDeviation: 3 })),
     ),
     svg('circle', { class: 'halo', cx: 100, cy: 100, r: 64 + Math.min(16, level * 1.5), fill: `url(#${id}-corona)`, opacity: Math.min(1, 0.6 + level * 0.04) }),
@@ -102,7 +102,7 @@ export function emblem(progress: ProgressView, options: { from?: number; label?:
         return svg('line', { x1: x1.toFixed(1), y1: y1.toFixed(1), x2: x2.toFixed(1), y2: y2.toFixed(1), 'stroke-width': i % 2 === 0 ? 2 : 1.2 });
       }),
     ),
-    svg('circle', { cx: 100, cy: 100, r: ringR, fill: 'none', stroke: '#262c57', 'stroke-width': 7 }),
+    svg('circle', { cx: 100, cy: 100, r: ringR, fill: 'none', stroke: 'rgb(255 255 255 / 0.1)', 'stroke-width': 4 }),
     progressCircle,
     svg(
       'g',
@@ -112,9 +112,9 @@ export function emblem(progress: ProgressView, options: { from?: number; label?:
         return svg('circle', { cx: (100 + Math.cos(angle) * 70).toFixed(1), cy: (100 + Math.sin(angle) * 70).toFixed(1), r: 3.5, fill: DOMAIN_COLOR[s.domain] ?? NEUTRAL });
       }),
     ),
-    svg('circle', { cx: 100, cy: 100, r: 48, fill: '#070a1c', stroke: 'rgb(255 255 255 / 0.14)', 'stroke-width': 1 }),
-    options.label === false ? null : svg('text', { class: 'lvl-label', x: 100, y: 84, 'text-anchor': 'middle' }, 'LEVEL'),
-    options.label === false ? null : svg('text', { class: 'lvl', x: 100, y: 120, 'text-anchor': 'middle' }, level),
+    svg('circle', { cx: 100, cy: 100, r: 48, fill: '#0a0b0c', stroke: 'rgb(255 255 255 / 0.14)', 'stroke-width': 1 }),
+    options.label === false ? null : svg('text', { class: 'lvl-label', x: 100, y: 78, 'text-anchor': 'middle' }, 'LEVEL'),
+    options.label === false ? null : svg('text', { class: 'lvl', x: 100, y: 128, 'text-anchor': 'middle' }, level),
   );
   return el;
 }
@@ -124,9 +124,8 @@ export function miniEclipse(): SVGSVGElement {
   return svg(
     'svg',
     { viewBox: '0 0 32 32', 'aria-hidden': 'true' },
-    svg('circle', { cx: 16, cy: 16, r: 13, fill: 'none', stroke: '#ffcf7a', 'stroke-width': 2, opacity: 0.9 }),
-    svg('circle', { cx: 16, cy: 16, r: 15, fill: 'none', stroke: '#a99cff', 'stroke-width': 1, opacity: 0.5 }),
-    svg('circle', { cx: 17.5, cy: 15, r: 11, fill: '#070a1c' }),
+    svg('circle', { cx: 16, cy: 16, r: 15, fill: '#ecbc44' }),
+    svg('circle', { cx: 18, cy: 14.5, r: 12.5, fill: '#0a0b0c' }),
   );
 }
 
@@ -163,7 +162,7 @@ export function constellation(progress: ProgressView, tips: TipHandlers): SVGSVG
         y1: prev.y,
         x2: star.x,
         y2: star.y,
-        stroke: both ? color : '#9aa0cc',
+        stroke: both ? color : '#a1a1aa',
         'stroke-opacity': both ? 0.7 : 0.25,
         'stroke-width': both ? 1.5 : 1,
         'stroke-dasharray': both ? '' : '2 4',
@@ -183,7 +182,7 @@ export function constellation(progress: ProgressView, tips: TipHandlers): SVGSVG
         on ? svg('circle', { class: 'twinkle', cx: x, cy: y, r: r * 2.6, fill: color, opacity: Math.min(0.45, 0.18 + skill.level * 0.04) }) : null,
         svg('circle', on
           ? { class: 'star-core', cx: x, cy: y, r, fill: color, stroke: '#fff', 'stroke-opacity': 0.6, 'stroke-width': 1 }
-          : { class: 'star-core', cx: x, cy: y, r, fill: 'none', stroke: '#9aa0cc', 'stroke-opacity': 0.7, 'stroke-width': 1 }),
+          : { class: 'star-core', cx: x, cy: y, r, fill: 'none', stroke: '#a1a1aa', 'stroke-opacity': 0.7, 'stroke-width': 1 }),
         svg('text', { class: 'star-label', x, y: y + r * (on ? 2.2 : 1) + 11, 'text-anchor': 'middle' }, on ? `${name} · ${skill.level}` : name),
       );
       g.addEventListener('mouseenter', (e) => tips.show(e, label));
@@ -197,7 +196,7 @@ export function constellation(progress: ProgressView, tips: TipHandlers): SVGSVG
       'g',
       {},
       svg('circle', { cx: ox + 14, cy: oy + 18, r: 4, fill: color }),
-      svg('text', { class: 'domain-label', x: ox + 24, y: oy + 21.5, fill: '#c2c6e8' }, domain.domain.toUpperCase()),
+      svg('text', { class: 'domain-label', x: ox + 24, y: oy + 21.5, fill: '#a1a1aa' }, domain.domain.toUpperCase()),
       ...lines,
       ...starEls,
     );
@@ -205,8 +204,8 @@ export function constellation(progress: ProgressView, tips: TipHandlers): SVGSVG
   return svg(
     'svg',
     { class: 'sky', viewBox: '0 0 340 300', role: 'group', 'aria-label': 'Skill constellation. Each star is a skill; it lights up when you earn XP in it and grows with its level.' },
-    svg('line', { x1: 170, y1: 10, x2: 170, y2: 290, stroke: '#2a3060', 'stroke-dasharray': '1 6' }),
-    svg('line', { x1: 10, y1: 150, x2: 330, y2: 150, stroke: '#2a3060', 'stroke-dasharray': '1 6' }),
+    svg('line', { x1: 170, y1: 10, x2: 170, y2: 290, stroke: 'rgb(255 255 255 / 0.1)', 'stroke-dasharray': '1 6' }),
+    svg('line', { x1: 10, y1: 150, x2: 330, y2: 150, stroke: 'rgb(255 255 255 / 0.1)', 'stroke-dasharray': '1 6' }),
     ...groups,
   );
 }

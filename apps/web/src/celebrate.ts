@@ -76,13 +76,13 @@ export function floatXp(anchor: Element, amount: number): void {
   const visible = box.bottom > 40 && box.top < window.innerHeight - 40;
   const left = visible ? box.left + box.width / 2 : window.innerWidth / 2;
   const top = visible ? box.top + box.height / 2 - 20 : window.innerHeight * 0.4;
-  const el = h('div', { class: 'float-xp', attrs: { 'aria-hidden': 'true' }, style: { left: `${left}px`, top: `${top}px` } }, `+${amount} XP`);
+  const el = h('div', { class: 'float-xp', attrs: { 'aria-hidden': 'true' }, style: { left: `${left}px`, top: `${top}px` } }, `+${amount}`, h('span', { class: 'unit' }, 'XP'));
   document.body.append(el);
   window.setTimeout(() => el.remove(), 1700);
   play.xp();
 }
 
-const SPARK_COLORS = ['#ffcf7a', '#a99cff', '#7fdcaa', '#d55181', '#ffffff'];
+const SPARK_COLORS = ['#0a0b0c', '#ffffff', '#b8862a', '#0a0b0c', '#ffffff'];
 
 function sparks(container: HTMLElement): void {
   if (prefersReducedMotion()) return;

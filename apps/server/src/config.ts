@@ -4,11 +4,16 @@ export interface Config {
   readonly secret: string;
   readonly port: number;
   readonly host: string;
-  readonly mailer: 'console';
+  readonly mailer: MailerConfig;
   readonly production: boolean;
   /** Read the client IP from X-Forwarded-For (only behind a trusted proxy). */
   readonly trustProxy: boolean;
 }
+
+export type MailerConfig =
+  | { readonly kind: 'console' }
+  /** Any SMTP provider: `smtps://user:pass@host:465` or `smtp://user:pass@host:587` (STARTTLS). */
+  | { readonly kind: 'smtp'; readonly url: string; readonly from: string };
 
 export class ConfigError extends Error {}
 
@@ -19,11 +24,20 @@ export function loadConfig(env: Record<string, string | undefined>): Config {
   const secret = env.LIFEOS_SECRET ?? '';
   if (secret.length < 32) throw new ConfigError('LIFEOS_SECRET must be at least 32 characters');
 
-  const mailer = env.LIFEOS_MAILER ?? 'console';
-  if (mailer !== 'console') throw new ConfigError(`Unknown LIFEOS_MAILER "${mailer}"`);
-  if (production) {
+  const kind = env.LIFEOS_MAILER ?? (env.SMTP_URL ? 'smtp' : 'console');
+  let mailer: MailerConfig;
+  if (kind === 'smtp') {
+    const url = env.SMTP_URL ?? '';
+    if (!/^smtps?:\/\//.test(url)) throw new ConfigError('SMTP_URL must start with smtp:// or smtps://');
+    const from = env.MAIL_FROM ?? '';
+    if (!/@/.test(from)) throw new ConfigError('MAIL_FROM is required, e.g. "LifeOS <hello@your-domain.com>"');
+    mailer = { kind: 'smtp', url, from };
+  } else if (kind === 'console') {
     // The console mailer prints sign-in codes to the log; that is only acceptable in development.
-    throw new ConfigError('No production mailer is configured yet; refusing to start with NODE_ENV=production');
+    if (production) throw new ConfigError('Set SMTP_URL and MAIL_FROM: the console mailer is not allowed with NODE_ENV=production');
+    mailer = { kind: 'console' };
+  } else {
+    throw new ConfigError(`Unknown LIFEOS_MAILER "${kind}"`);
   }
 
   const port = Number(env.PORT ?? 8787);

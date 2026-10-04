@@ -12,7 +12,11 @@ describe('config', () => {
     expect(loadConfig(base)).toMatchObject({ port: 8787, host: '127.0.0.1', trustProxy: false });
     expect(() => loadConfig({ ...base, DATABASE_URL: undefined })).toThrow(/DATABASE_URL/);
     expect(() => loadConfig({ ...base, LIFEOS_SECRET: 'short' })).toThrow(/LIFEOS_SECRET/);
-    expect(() => loadConfig({ ...base, NODE_ENV: 'production' })).toThrow(/production mailer/);
+    expect(() => loadConfig({ ...base, NODE_ENV: 'production' })).toThrow(/SMTP_URL/);
+    const smtp = { ...base, NODE_ENV: 'production', SMTP_URL: 'smtps://user:pass@smtp.example.com:465', MAIL_FROM: 'LifeOS <hello@example.com>' };
+    expect(loadConfig(smtp)).toMatchObject({ production: true, mailer: { kind: 'smtp', from: 'LifeOS <hello@example.com>' } });
+    expect(() => loadConfig({ ...smtp, MAIL_FROM: undefined })).toThrow(/MAIL_FROM/);
+    expect(() => loadConfig({ ...smtp, SMTP_URL: 'https://smtp.example.com' })).toThrow(/smtp:\/\//);
     expect(() => loadConfig({ ...base, PORT: '99999' })).toThrow(/PORT/);
   });
 });

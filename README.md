@@ -74,9 +74,21 @@ without it they are skipped.
 For the apps, see [`apps/companion/README.md`](apps/companion/README.md) and
 [`apps/server/README.md`](apps/server/README.md).
 
-## Next steps (blueprint §21)
+## Status
 
-1. Choose an email provider and deploy the server and web client for the founding cohort.
-2. Companion signing and notarization, an opt-in launch-at-login, and a link from the companion to the home.
-3. Friends and invite-only groups, plus the friend leaderboard.
-4. Instrumentation for the north-star metric, the **Weekly Meaningful Progress Rate**. The two inputs exist now: completed quests and recap feedback.
+**Built and tested** (all of it runs in CI, including a production Docker boot):
+
+- The domain core: evidence model, deduplication, anomaly checks, XP rules, quests, seasons, access codes and the leaderboard score.
+- The macOS companion: consent-first tracking with no extra macOS permissions, local storage, privacy controls, sign-in, upload, and a link to the home. CI packages it on macOS.
+- The server: passwordless email sign-in over SMTP, invite-only registration, seasons, consent, upload, data export and deletion, an admin CLI and API, and the audit log.
+- The ECLIPSE home: the game engine, Today (priorities, quests, review queue, explained XP, manual logging, skills) and Week (recap with an accuracy question).
+- Deployment: a Dockerfile, docker-compose, and a GitHub Action that builds the Mac app for your server. See **[docs/deploy.md](docs/deploy.md)**.
+
+**Needs you** before inviting anyone (details in [docs/deploy.md](docs/deploy.md)):
+
+1. A host, a domain and an email provider, then follow the deploy guide (about an hour).
+2. Terms of service and a privacy policy, ideally reviewed by a lawyer, plus a name check for ECLIPSE and PROMETHEE.
+3. Optional: an Apple Developer account, so the Mac app is signed and notarized.
+
+**Not built yet** (blueprint roadmap): friends, groups and the friend leaderboard; the AI mentor; fitness and wearable connectors; the Windows companion; an admin web console; and metrics for the north-star measure (both of its inputs are already recorded).
+

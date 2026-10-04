@@ -37,7 +37,8 @@ NSWorkspace frontmost app  ──►  HelperDetector ─┐
 - **Only settled sessions are uploaded.** A session waits until it can no longer change: the merge gap plus the idle threshold plus 5 minutes after it ends, since server events are immutable. Uploads start with the day upload was turned on, run every 15 minutes and on wake, and use a watermark so nothing is sent twice.
 - **Deleting on the Mac also deletes on the account.** This covers the last hour, a day, everything, or turning tracking off with deletion, once anything may have been uploaded. Deletions are queued and retried if the server can't be reached.
 - **Each sync confirms the session.** If the session was revoked elsewhere, the companion signs out and says why.
-- The server URL is set at build time with `LIFEOS_SERVER_URL`. It must be HTTPS except for localhost. Development builds can override it at runtime.
+- **Open your LifeOS home** opens the server's web app, where XP, quests and the weekly recap live.
+- The server URL is set at build time with `LIFEOS_SERVER_URL`. The **Companion release** GitHub Action builds `.dmg` files for any server, signed when secrets are present (see [docs/deploy.md](../../docs/deploy.md)). It must be HTTPS except for localhost. Development builds can override it at runtime.
 
 What the account receives: categories, start and end times, active seconds and focus tags.
 It never receives app bundle ids, app names or raw samples.

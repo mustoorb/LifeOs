@@ -266,7 +266,12 @@ function accountCard(): HTMLElement {
         h('p', {}, 'Signed in as ', h('strong', {}, account.displayName ?? ''), h('span', { class: 'muted' }, ` · ${account.email ?? ''}`)),
         account.staysSignedIn ? null : h('p', { class: 'muted small' }, 'This Mac can’t store your sign-in securely, so you will sign in again after quitting.'),
         uploadControls(account, set),
-        h('div', { class: 'row', style: { marginTop: '10px' } }, button('Sign out', async () => set(await api.signOut()), 'link')),
+        h(
+          'div',
+          { class: 'row', style: { marginTop: '10px' } },
+          button('Open your LifeOS home', () => api.openHome(), 'primary'),
+          button('Sign out', async () => set(await api.signOut()), 'link'),
+        ),
       );
   }
 }

@@ -24,6 +24,7 @@ const api: CompanionApi = {
   signOut: () => ipcRenderer.invoke(CHANNELS.signOut),
   setUpload: (enabled) => ipcRenderer.invoke(CHANNELS.setUpload, enabled),
   syncNow: () => ipcRenderer.invoke(CHANNELS.syncNow),
+  openHome: () => ipcRenderer.invoke(CHANNELS.openHome),
   onAccountChanged(listener) {
     const handler = (_event: IpcRendererEvent, account: AccountView) => listener(account);
     ipcRenderer.on(CHANNELS.accountChanged, handler);

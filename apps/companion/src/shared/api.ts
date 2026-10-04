@@ -112,6 +112,8 @@ export interface CompanionApi {
   signOut(): Promise<AccountView>;
   setUpload(enabled: boolean): Promise<AccountView>;
   syncNow(): Promise<AccountView>;
+  /** Opens the ECLIPSE home (the server's web client) in the default browser. */
+  openHome(): Promise<void>;
   onStateChanged(listener: (state: CompanionState) => void): () => void;
   onAccountChanged(listener: (account: AccountView) => void): () => void;
   onNavigate(listener: (section: string) => void): () => void;
@@ -139,6 +141,7 @@ export const CHANNELS = {
   signOut: 'companion:sign-out',
   setUpload: 'companion:set-upload',
   syncNow: 'companion:sync-now',
+  openHome: 'companion:open-home',
   accountChanged: 'companion:account-changed',
   stateChanged: 'companion:state-changed',
   navigate: 'companion:navigate',

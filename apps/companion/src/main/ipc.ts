@@ -1,4 +1,4 @@
-import { dialog, ipcMain, type IpcMainInvokeEvent } from 'electron';
+import { dialog, ipcMain, shell, type IpcMainInvokeEvent } from 'electron';
 import { writeFile } from 'node:fs/promises';
 import { isBundleId } from '../core/settings.js';
 import type { AccountManager } from '../core/account.js';
@@ -93,6 +93,8 @@ export function registerIpc(service: CompanionService, account: AccountManager):
   handle(CHANNELS.signOut, () => withAccount(account.signOut()));
   handle(CHANNELS.setUpload, (enabled: unknown) => withAccount(account.setUpload(expect(enabled, isBoolean, 'flag'))));
   handle(CHANNELS.syncNow, () => withAccount(account.sync()));
+  // Only ever the configured server's origin, which was validated as HTTPS (or localhost).
+  handle(CHANNELS.openHome, () => shell.openExternal(account.view().serverUrl));
 
   handle(CHANNELS.getState, () => service.state());
   handle(CHANNELS.getTimeline, (dateKey: unknown) => service.timeline(expect(dateKey, isDateKey, 'date')));

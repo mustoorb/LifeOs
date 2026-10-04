@@ -1,3 +1,4 @@
+import nodemailer, { type Transporter } from 'nodemailer';
 import type { Queryable } from './db.js';
 
 /** An error that is safe to show the client, with a stable code and HTTP status. */
@@ -32,6 +33,26 @@ export interface Mailer {
 export class ConsoleMailer implements Mailer {
   async send(mail: Mail): Promise<void> {
     console.log(`\n[mail] to=${mail.to} subject="${mail.subject}"\n${mail.text}\n`);
+  }
+}
+
+/** Sends through any SMTP provider. Verified at startup so misconfiguration fails fast. */
+export class SmtpMailer implements Mailer {
+  private readonly transport: Transporter;
+
+  constructor(
+    url: string,
+    private readonly from: string,
+  ) {
+    this.transport = nodemailer.createTransport(url);
+  }
+
+  verify(): Promise<true> {
+    return this.transport.verify();
+  }
+
+  async send(mail: Mail): Promise<void> {
+    await this.transport.sendMail({ from: this.from, to: mail.to, subject: mail.subject, text: mail.text });
   }
 }
 

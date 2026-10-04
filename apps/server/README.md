@@ -22,7 +22,8 @@ node apps/server/dist/cli.js issue-codes --campaign founding --count 30 --expire
 node apps/server/dist/server.js               # http://127.0.0.1:8787, migrates on start
 ```
 
-Sign-in codes are printed to the server log by the development mailer. To make someone an
+Without `SMTP_URL`, sign-in codes are printed to the server log (development only). To
+deploy, see [docs/deploy.md](../../docs/deploy.md). To make someone an
 admin, have them sign up, then run `cli.js set-role <email> admin`.
 
 | Variable | Meaning |
@@ -30,6 +31,7 @@ admin, have them sign up, then run `cli.js set-role <email> admin`.
 | `DATABASE_URL` | PostgreSQL connection string (required) |
 | `LIFEOS_SECRET` | At least 32 characters (required) |
 | `PORT`, `HOST` | Default `8787`, `127.0.0.1` |
+| `SMTP_URL`, `MAIL_FROM` | Any SMTP provider. Required in production; without them, codes are printed to the log (development only). |
 | `LIFEOS_TRUST_PROXY=1` | Read the client IP from `X-Forwarded-For`. Set this only behind your own proxy. |
 
 ## API
@@ -88,7 +90,6 @@ a strict CSP and no third-party resources.
 
 ## Not done yet
 
-- **A real mailer.** The server refuses to start with `NODE_ENV=production` until one exists, because the development mailer prints codes to the log. Picking a provider is an open decision.
 - **Shared rate limiting.** The limiter is in memory, which is correct for one instance only.
 - **An admin web console.** Admin work currently goes through the CLI or the admin API.
 - **Background refresh.** Game state refreshes on requests and uploads, not on a schedule. A quest that ends while nobody looks is settled on the next visit, which is correct but late.

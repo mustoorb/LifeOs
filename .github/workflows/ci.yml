@@ -71,3 +71,43 @@ jobs:
           test "$(plutil -extract LSUIElement raw "$app/Contents/Info.plist")" = "true"
           test -x "$app/Contents/Resources/bin/lifeos-frontmost"
           codesign -d --entitlements - "$app" || true
+
+  docker:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build the image
+        run: docker build -t lifeos .
+      - name: Boot it in production mode against a local SMTP sink
+        run: |
+          docker run -d --name smtp -p 1025:1025 -p 8025:8025 axllent/mailpit
+          docker run -d --name lifeos --network host \
+            -e NODE_ENV=production \
+            -e PORT=8787 \
+            -e DATABASE_URL=postgres://postgres:postgres@127.0.0.1:5432/postgres \
+            -e LIFEOS_SECRET=ci-secret-ci-secret-ci-secret-ci-secret \
+            -e SMTP_URL=smtp://127.0.0.1:1025 \
+            -e MAIL_FROM='LifeOS <hello@lifeos.test>' \
+            lifeos
+          for i in $(seq 1 30); do curl -fs http://127.0.0.1:8787/v1/health && break; sleep 1; done
+          docker logs lifeos
+      - name: Serves the API, the web client, and sends sign-in mail
+        run: |
+          curl -fs http://127.0.0.1:8787/v1/health
+          curl -fs -D - -o /dev/null http://127.0.0.1:8787/ | grep -i "content-security-policy: default-src 'none'"
+          curl -fs -X POST -H 'content-type: application/json' -d '{"email":"ci@example.com"}' http://127.0.0.1:8787/v1/auth/start
+          sleep 2
+          curl -fs http://127.0.0.1:8025/api/v1/messages | grep -q "Your LifeOS sign-in code"
+          docker exec lifeos node apps/server/dist/cli.js issue-codes --campaign founding --count 1

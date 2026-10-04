@@ -82,7 +82,7 @@ For the apps, see [`apps/companion/README.md`](apps/companion/README.md) and
 - The macOS companion: consent-first tracking with no extra macOS permissions, local storage, privacy controls, sign-in, upload, and a link to the home. CI packages it on macOS.
 - The server: passwordless email sign-in over SMTP, invite-only registration, seasons, consent, upload, data export and deletion, an admin CLI and API, and the audit log.
 - The ECLIPSE home: the game engine, Today (priorities, quests, review queue, explained XP, manual logging, skills) and Week (recap with an accuracy question).
-- Deployment: a Dockerfile, docker-compose, and a GitHub Action that builds the Mac app for your server. See **[docs/deploy.md](docs/deploy.md)**.
+- Deployment: a Dockerfile, docker-compose, and a GitHub Action that builds the Mac app for your server. See **[docs/deploy.md](docs/deploy.md)**. For free hosting, `deploy/setup.sh` installs everything on an Oracle Cloud Always Free server, including HTTPS and nightly backups. See **[docs/deploy-oracle.md](docs/deploy-oracle.md)**.
 
 **Needs you** before inviting anyone (details in [docs/deploy.md](docs/deploy.md)):
 

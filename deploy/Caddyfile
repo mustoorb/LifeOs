@@ -1,0 +1,6 @@
+# HTTPS in front of the LifeOS server. Caddy gets and renews the certificate itself.
+# LIFEOS_DOMAIN comes from .env (see deploy/setup.sh).
+{$LIFEOS_DOMAIN} {
+	encode zstd gzip
+	reverse_proxy server:8787
+}

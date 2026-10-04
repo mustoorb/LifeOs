@@ -15,6 +15,10 @@ only you can create; each of those is marked **you**.
 
 ## 1. Deploy the server
 
+**For a $0 setup**, follow **[deploy-oracle.md](deploy-oracle.md)** instead of this section. It covers an
+Oracle Cloud Always Free server, a free DuckDNS address and Gmail, and `deploy/setup.sh` does the
+installing. Then continue at step 2 below.
+
 ### Option A: a hosting platform
 
 1. Create a **PostgreSQL 16** database. Copy its connection string.

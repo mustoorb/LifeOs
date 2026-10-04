@@ -111,3 +111,50 @@ jobs:
           sleep 2
           curl -fs http://127.0.0.1:8025/api/v1/messages | grep -q "Your LifeOS sign-in code"
           docker exec lifeos node apps/server/dist/cli.js issue-codes --campaign founding --count 1
+
+  self-hosted-stack:
+    # The stack deploy/setup.sh installs: compose + Caddy HTTPS, driven through the lifeos command.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Lint the deploy scripts
+        run: shellcheck -x deploy/setup.sh deploy/lifeos
+      - name: Start the stack with a local SMTP sink
+        run: |
+          cat > deploy-ci.yml <<'YML'
+          services:
+            mailpit:
+              image: axllent/mailpit
+              ports: ['127.0.0.1:8025:8025']
+          YML
+          cat > .env <<'ENV'
+          COMPOSE_FILE=docker-compose.yml:deploy/compose.https.yml:deploy-ci.yml
+          LIFEOS_DOMAIN=localhost
+          POSTGRES_PASSWORD=ci-database-password
+          LIFEOS_SECRET=ci-secret-ci-secret-ci-secret-ci-secret
+          SMTP_URL='smtp://mailpit:1025'
+          MAIL_FROM='LifeOS <hello@lifeos.test>'
+          ENV
+          docker compose up -d --build --quiet-pull
+          for i in $(seq 1 60); do curl -fs https://localhost/v1/health -k && break; sleep 2; done
+          docker compose ps
+      - name: Serves over HTTPS through Caddy and sends sign-in mail
+        run: |
+          curl -fsk https://localhost/v1/health
+          curl -fsk -D - -o /dev/null https://localhost/ | grep -i "content-security-policy: default-src 'none'"
+          curl -fs -o /dev/null -w '%{http_code}' http://localhost/ | grep -q 308
+          curl -fsk -X POST -H 'content-type: application/json' -d '{"email":"ci@example.com"}' https://localhost/v1/auth/start
+          sleep 2
+          curl -fs http://127.0.0.1:8025/api/v1/messages | grep -q "Your LifeOS sign-in code"
+      - name: The lifeos command works
+        env:
+          LIFEOS_DIR: ${{ github.workspace }}
+          LIFEOS_BACKUP_DIR: ${{ runner.temp }}/backups
+        run: |
+          sudo -E bash deploy/lifeos status
+          sudo -E bash deploy/lifeos admin create-season --id founding-1 --name "Founding Season" --starts 2026-11-02 --weeks 6 --campaigns founding
+          sudo -E bash deploy/lifeos admin issue-codes --campaign founding --count 2 --expires-days 30
+          sudo -E bash deploy/lifeos backup
+          sudo -E sh -c 'zcat "$LIFEOS_BACKUP_DIR"/*.sql.gz' | grep -q "CREATE TABLE public.seasons"
+      - if: failure()
+        run: docker compose logs

@@ -1,0 +1,23 @@
+# Adds Caddy for HTTPS on ports 80 and 443. Used together with the root docker-compose.yml:
+#   COMPOSE_FILE=docker-compose.yml:deploy/compose.https.yml   (deploy/setup.sh writes this to .env)
+# Paths are relative to the repository root, where the first compose file lives.
+services:
+  caddy:
+    image: caddy:2
+    restart: unless-stopped
+    depends_on:
+      - server
+    environment:
+      LIFEOS_DOMAIN: ${LIFEOS_DOMAIN:?set LIFEOS_DOMAIN in .env}
+    ports:
+      - '80:80'
+      - '443:443'
+      - '443:443/udp'
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+
+volumes:
+  caddy-data:
+  caddy-config:

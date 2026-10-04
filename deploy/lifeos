@@ -1,0 +1,78 @@
+#!/usr/bin/env bash
+# Day-to-day commands for a LifeOS server installed with deploy/setup.sh.
+# setup.sh links this file to /usr/local/bin/lifeos. Run `lifeos help`.
+set -euo pipefail
+
+if [[ $EUID -ne 0 ]]; then exec sudo "$0" "$@"; fi
+
+LIFEOS_DIR=${LIFEOS_DIR:-/opt/lifeos}
+BACKUP_DIR=${LIFEOS_BACKUP_DIR:-/var/backups/lifeos}
+DUCKDNS_FILE=/etc/lifeos/duckdns
+KEEP_BACKUP_DAYS=14
+
+cd "$LIFEOS_DIR"
+
+usage() {
+  cat <<'EOF'
+Usage: lifeos <command>
+
+  status            Show the containers and check the server's health
+  logs [service]    Follow the logs (server by default; also caddy, db)
+  admin <args>      Run the admin CLI, e.g.
+                      lifeos admin issue-codes --campaign founding --count 10 --expires-days 30
+                      lifeos admin list-codes
+                      lifeos admin set-role you@example.com admin
+                      lifeos admin help
+  update            Pull the latest code from GitHub and restart
+  restart           Restart everything
+  backup            Save a compressed database dump to /var/backups/lifeos (runs nightly)
+  duckdns           Point your DuckDNS name at this server's IP (runs every 5 minutes)
+EOF
+}
+
+case "${1:-help}" in
+  status)
+    docker compose ps
+    if curl -fsS http://127.0.0.1:8787/v1/health >/dev/null; then echo "Server: healthy"; else echo "Server: not responding"; exit 1; fi
+    ;;
+  logs)
+    docker compose logs -f --tail=200 "${2:-server}"
+    ;;
+  admin)
+    shift
+    docker compose exec -T server node apps/server/dist/cli.js "$@"
+    ;;
+  update)
+    git pull --ff-only
+    docker compose up -d --build
+    docker image prune -f >/dev/null
+    echo "Updated to $(git log -1 --format='%h %s')."
+    ;;
+  restart)
+    docker compose restart
+    ;;
+  backup)
+    mkdir -p "$BACKUP_DIR"
+    chmod 700 "$BACKUP_DIR"
+    file="$BACKUP_DIR/lifeos-$(date -u +%Y%m%d-%H%M%S).sql.gz"
+    umask 077
+    docker compose exec -T db pg_dump -U lifeos --clean --if-exists lifeos | gzip >"$file.partial"
+    mv "$file.partial" "$file"
+    find "$BACKUP_DIR" -name 'lifeos-*.sql.gz' -mtime +"$KEEP_BACKUP_DAYS" -delete
+    echo "Saved $file"
+    ;;
+  duckdns)
+    [[ -f $DUCKDNS_FILE ]] || { echo "DuckDNS is not set up on this server."; exit 1; }
+    # shellcheck source=/dev/null
+    source "$DUCKDNS_FILE"
+    result=$(curl -fsS --max-time 20 "https://www.duckdns.org/update?domains=${DUCKDNS_NAME}&token=${DUCKDNS_TOKEN}&ip=")
+    [[ $result == OK ]] || { echo "DuckDNS answered: $result"; exit 1; }
+    ;;
+  help | -h | --help)
+    usage
+    ;;
+  *)
+    usage
+    exit 1
+    ;;
+esac

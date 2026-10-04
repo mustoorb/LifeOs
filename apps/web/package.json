@@ -1,0 +1,13 @@
+{
+  "name": "@lifeos/web",
+  "version": "0.1.0",
+  "private": true,
+  "description": "ECLIPSE home: the LifeOS web client, served by @lifeos/server",
+  "type": "module",
+  "scripts": {
+    "build": "node build.mjs"
+  },
+  "devDependencies": {
+    "esbuild": "^0.28.2"
+  }
+}

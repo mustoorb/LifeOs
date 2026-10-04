@@ -1,0 +1,29 @@
+{
+  "name": "@lifeos/server",
+  "version": "0.1.0",
+  "private": true,
+  "description": "ECLIPSE account, access-code and season service, plus PROMETHEE desktop ingestion",
+  "type": "module",
+  "scripts": {
+    "build": "node build.mjs",
+    "start": "node dist/server.js",
+    "cli": "node dist/cli.js"
+  },
+  "dependencies": {
+    "@hono/node-server": "^2.1.3",
+    "hono": "^4.13.12",
+    "nodemailer": "^10.0.14",
+    "pg": "^8.23.1",
+    "zod": "^4.6.5"
+  },
+  "devDependencies": {
+    "@lifeos/contracts": "*",
+    "@lifeos/eclipse": "*",
+    "@lifeos/promethee": "*",
+    "@types/nodemailer": "^8.0.2",
+    "@types/pg": "^8.23.1",
+    "@types/smtp-server": "^3.5.13",
+    "esbuild": "^0.28.2",
+    "smtp-server": "^3.19.17"
+  }
+}

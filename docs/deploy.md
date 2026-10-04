@@ -15,9 +15,10 @@ only you can create; each of those is marked **you**.
 
 ## 1. Deploy the server
 
-**For a $0 setup**, follow **[deploy-oracle.md](deploy-oracle.md)** instead of this section. It covers an
-Oracle Cloud Always Free server, a free DuckDNS address and Gmail, and `deploy/setup.sh` does the
-installing. Then continue at step 2 below.
+**For a $0 setup**, skip this section and use one of these guides, then continue at step 2 below:
+
+- **[deploy-mac.md](deploy-mac.md)**: run it on your own Mac, with Tailscale Funnel for the public address. This needs no card, but it's online only while the Mac is awake. `deploy/mac.sh` does the installing.
+- **[deploy-oracle.md](deploy-oracle.md)**: an Oracle Cloud Always Free server, a free DuckDNS address and Gmail. A card is needed to sign up. `deploy/setup.sh` does the installing.
 
 ### Option A: a hosting platform
 

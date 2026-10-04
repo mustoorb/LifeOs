@@ -169,7 +169,9 @@ export function createApp(services: Services, options: HttpOptions): Hono<Env> {
 
   const clientIp = (c: Context<Env>): string => {
     if (options.trustProxy) {
-      const forwarded = c.req.header('x-forwarded-for')?.split(',')[0]?.trim();
+      // Our proxy appends the address it saw, so the last entry is the one we can trust;
+      // anything before it came from the client and may be forged.
+      const forwarded = c.req.header('x-forwarded-for')?.split(',').at(-1)?.trim();
       if (forwarded) return forwarded;
     }
     return c.env?.incoming?.socket?.remoteAddress ?? 'unknown';

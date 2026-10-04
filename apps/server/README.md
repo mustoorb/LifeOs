@@ -32,7 +32,7 @@ admin, have them sign up, then run `cli.js set-role <email> admin`.
 | `LIFEOS_SECRET` | At least 32 characters (required) |
 | `PORT`, `HOST` | Default `8787`, `127.0.0.1` |
 | `SMTP_URL`, `MAIL_FROM` | Any SMTP provider. Required in production; without them, codes are printed to the log (development only). |
-| `LIFEOS_TRUST_PROXY=1` | Read the client IP from `X-Forwarded-For`. Set this only behind your own proxy. |
+| `LIFEOS_TRUST_PROXY=1` | Read the client IP from the last `X-Forwarded-For` entry, the one your proxy added. Set this only behind your own proxy. |
 
 ## API
 

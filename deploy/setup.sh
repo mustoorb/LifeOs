@@ -37,9 +37,9 @@ ask_secret() {
 }
 
 yes_no() { # yes_no "Question" Y|N
-  local answer
-  ask answer "$1 (y/n)" "$2"
-  [[ $answer =~ ^[Yy] ]]
+  local reply # not "answer": ask() has a local of that name, which would shadow ours
+  ask reply "$1 (y/n)" "$2"
+  [[ $reply =~ ^[Yy] ]]
 }
 
 urlencode() { python3 -c 'import sys, urllib.parse; print(urllib.parse.quote(sys.argv[1], safe=""))' "$1"; }

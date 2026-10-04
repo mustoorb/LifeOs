@@ -1,30 +1,9 @@
-import type { ActivityView, HomeView, QuestView, RecapView } from '../../server/src/home-types.js';
+import type { ActivityView, BadgeView, HomeView, ProgressView, QuestView, RecapView } from '../../server/src/home-types.js';
 import { ApiError, api, type Correction } from './api.js';
-
-// --- DOM helpers: text only, never innerHTML ----------------------------------------
-
-type Child = Node | string | number | null | undefined | false;
-interface Props {
-  class?: string;
-  id?: string;
-  attrs?: Record<string, string>;
-  style?: Record<string, string>;
-  on?: Partial<Record<keyof HTMLElementEventMap, (event: Event) => void>>;
-}
-
-function h<K extends keyof HTMLElementTagNameMap>(tag: K, props: Props = {}, ...children: Child[]): HTMLElementTagNameMap[K] {
-  const el = document.createElement(tag);
-  if (props.class) el.className = props.class;
-  if (props.id) el.id = props.id;
-  for (const [key, value] of Object.entries(props.attrs ?? {})) el.setAttribute(key, value);
-  for (const [key, value] of Object.entries(props.style ?? {})) el.style.setProperty(key, value);
-  for (const [event, handler] of Object.entries(props.on ?? {})) el.addEventListener(event, handler as EventListener);
-  for (const child of children) {
-    if (child === null || child === undefined || child === false) continue;
-    el.append(typeof child === 'number' ? String(child) : child);
-  }
-  return el;
-}
+import { celebrate, floatXp, takeChanges } from './celebrate.js';
+import { BADGE_ICON, QUEST_ICON, constellation, emblem, miniEclipse, rankFor } from './cosmic.js';
+import { h, store } from './dom.js';
+import { play, setSound, soundOn } from './sound.js';
 
 const header = document.getElementById('header')!;
 const main = document.getElementById('main')!;
@@ -126,29 +105,42 @@ function select(options: readonly [value: string, label: string][], selected?: s
 
 // --- routing ---------------------------------------------------------------------------
 
-type Route = { view: 'today' } | { view: 'week'; week?: string };
+type Route = { view: 'today' } | { view: 'week'; week?: string } | { view: 'badges' };
 
 function route(): Route {
+  if (location.hash === '#/badges') return { view: 'badges' };
   const match = /^#\/week(?:\/(\d{4}-\d{2}-\d{2}))?$/.exec(location.hash);
   return match ? { view: 'week', ...(match[1] ? { week: match[1] } : {}) } : { view: 'today' };
 }
 
 let account: HomeView['account'] | null = null;
 
+function soundToggle(): HTMLButtonElement {
+  const el = h('button', { class: 'quiet', attrs: { type: 'button' } });
+  const paint = () => {
+    const on = soundOn();
+    el.textContent = on ? '🔊 Sound' : '🔇 Sound';
+    el.setAttribute('aria-pressed', String(on));
+    el.title = on ? 'Turn sound effects off' : 'Turn sound effects on';
+  };
+  el.addEventListener('click', () => {
+    setSound(!soundOn());
+    paint();
+    play.tick();
+  });
+  paint();
+  return el;
+}
+
 function renderHeader(signedIn: boolean): void {
   const current = route().view;
+  const link = (href: string, label: string, view: Route['view']) => h('a', { attrs: { href, ...(current === view ? { 'aria-current': 'page' } : {}) } }, label);
   const parts: (Node | null)[] = [
-    h('span', { class: 'brand' }, 'ECLIPSE'),
-    signedIn
-      ? h(
-          'nav',
-          { class: 'nav', attrs: { 'aria-label': 'Main' } },
-          h('a', { attrs: { href: '#/', ...(current === 'today' ? { 'aria-current': 'page' } : {}) } }, 'Today'),
-          h('a', { attrs: { href: '#/week', ...(current === 'week' ? { 'aria-current': 'page' } : {}) } }, 'Week'),
-        )
-      : null,
+    h('span', { class: 'brand' }, miniEclipse(), h('span', {}, 'ECLIPSE')),
+    signedIn ? h('nav', { class: 'nav', attrs: { 'aria-label': 'Main' } }, link('#/', 'Today', 'today'), link('#/week', 'Week', 'week'), link('#/badges', 'Badges', 'badges')) : null,
     h('span', { class: 'spacer' }),
-    signedIn && account ? h('span', { class: 'muted small' }, account.displayName) : null,
+    signedIn ? soundToggle() : null,
+    signedIn && account ? h('span', { class: 'who' }, account.displayName) : null,
     signedIn
       ? button('Sign out', async () => {
           await api.logout();
@@ -163,6 +155,7 @@ function renderHeader(signedIn: boolean): void {
 async function render(): Promise<void> {
   const current = route();
   if (current.view === 'week') await showWeek(current.week);
+  else if (current.view === 'badges') await showBadges();
   else await showToday();
 }
 
@@ -170,16 +163,20 @@ window.addEventListener('hashchange', () => void run(render));
 
 // --- sign-in -----------------------------------------------------------------------------
 
+/** The emblem on the sign-in screens: a fresh level-1 eclipse, a third of the way round. */
+const WELCOME: ProgressView = { totalXp: 0, heldXp: 0, level: 1, xpIntoLevel: 33, xpForNextLevel: 100, domains: [] };
+
+function authCard(title: string, intro: Node | string, ...rest: Node[]): HTMLElement {
+  const art = emblem(WELCOME, { label: false });
+  art.setAttribute('aria-hidden', 'true');
+  return h('section', { class: 'card auth' }, art, h('h1', {}, title), h('p', { class: 'muted' }, intro), ...rest);
+}
+
 function showSignIn(): void {
   account = null;
   renderHeader(false);
   const email = h('input', { attrs: { type: 'email', autocomplete: 'email', placeholder: 'you@example.com', 'aria-label': 'Email', required: '' } });
-  const form = h(
-    'form',
-    { class: 'stackform' },
-    email,
-    h('button', { class: 'primary', attrs: { type: 'submit' } }, 'Email me a sign-in code'),
-  );
+  const form = h('form', { class: 'stackform' }, email, h('button', { class: 'primary', attrs: { type: 'submit' } }, 'Email me a sign-in code'));
   form.addEventListener('submit', (event) => {
     event.preventDefault();
     void run(async () => {
@@ -187,15 +184,7 @@ function showSignIn(): void {
       showCode(email.value.trim());
     });
   });
-  main.replaceChildren(
-    h(
-      'section',
-      { class: 'card auth' },
-      h('h1', {}, 'Welcome to LifeOS'),
-      h('p', { class: 'muted' }, 'Your real effort, made playable. Sign in with your email; we will send you a six-digit code.'),
-      form,
-    ),
-  );
+  main.replaceChildren(authCard('Welcome to LifeOS', 'Your real effort, made playable. Sign in with your email; we will send you a six-digit code.', form));
   email.focus();
 }
 
@@ -211,14 +200,7 @@ function showCode(email: string): void {
     });
   });
   main.replaceChildren(
-    h(
-      'section',
-      { class: 'card auth' },
-      h('h1', {}, 'Check your email'),
-      h('p', { class: 'muted' }, 'Enter the code we sent to ', h('strong', {}, email), '. It expires in 10 minutes.'),
-      form,
-      h('p', {}, button('Use a different email', async () => showSignIn(), 'link')),
-    ),
+    authCard('Check your email', h('span', {}, 'Enter the code we sent to ', h('strong', {}, email), '. It expires in 10 minutes.'), form, h('p', {}, button('Use a different email', async () => showSignIn(), 'link'))),
   );
   code.focus();
 }
@@ -254,15 +236,7 @@ function showRegister(registrationToken: string, termsVersion: string, email: st
       await render();
     });
   });
-  main.replaceChildren(
-    h(
-      'section',
-      { class: 'card auth' },
-      h('h1', {}, 'Join LifeOS'),
-      h('p', { class: 'muted' }, 'No account uses ', h('strong', {}, email), ' yet. LifeOS is invite-only for now: use your access code.'),
-      form,
-    ),
-  );
+  main.replaceChildren(authCard('Join LifeOS', h('span', {}, 'No account uses ', h('strong', {}, email), ' yet. LifeOS is invite-only for now: use your access code.'), form));
   accessCode.focus();
 }
 
@@ -273,34 +247,57 @@ async function showToday(): Promise<void> {
   account = view.account;
   renderHeader(true);
   const refresh = () => run(showToday);
+  const changes = takeChanges(view);
+  const hero = heroCard(view, changes.previousFraction);
   main.replaceChildren(
     h(
       'div',
-      { class: 'grid' },
-      h('div', { class: 'stack' }, prioritiesCard(view, refresh), questsCard(view, refresh), reviewCard(view, refresh), activityCard(view, refresh), logCard(refresh)),
-      h('div', { class: 'stack' }, levelCard(view), skillsCard(view), awardsCard(view)),
+      { class: 'stack' },
+      hero,
+      h(
+        'div',
+        { class: 'grid' },
+        h('div', { class: 'stack' }, prioritiesCard(view, refresh), questsCard(view, refresh), reviewCard(view, refresh), activityCard(view, refresh), logCard(refresh)),
+        h('div', { class: 'stack' }, skillsCard(view), badgesCard(view.badges), awardsCard(view)),
+      ),
     ),
   );
+  if (changes.xpGained && changes.xpGained > 0) floatXp(hero.querySelector('.emblem') ?? hero, changes.xpGained);
+  if (changes.moments.length) window.setTimeout(() => celebrate(changes.moments), changes.xpGained ? 900 : 200);
 }
 
-function levelCard(view: HomeView): HTMLElement {
+function heroCard(view: HomeView, from: number | null): HTMLElement {
   const p = view.progress;
+  const rank = rankFor(p.level);
+  const todayMinutes = view.activities.filter((a) => a.userConfirmation !== 'discarded').reduce((sum, a) => sum + a.minutes, 0);
+  const questsDone = view.quests.filter((q) => q.status === 'complete').length;
+  const earned = view.badges.filter((b) => b.earned).length;
+  const daysLeft = view.season ? Math.max(0, Math.ceil((view.season.endsAt - Date.now()) / 86_400_000)) : null;
+  const stat = (label: string, value: string) => h('div', { class: 'stat' }, h('div', { class: 'label' }, label), h('div', { class: 'value' }, value));
   return h(
     'section',
-    { class: 'card', attrs: { 'data-testid': 'level' } },
-    h('div', { class: 'level' }, h('span', { class: 'muted' }, 'Level'), h('span', { class: 'value' }, p.level)),
-    meter(p.xpIntoLevel / Math.max(1, p.xpForNextLevel), 'Progress to next level'),
-    h('div', { class: 'row between small' }, h('span', { class: 'muted' }, `${p.xpIntoLevel} / ${p.xpForNextLevel} XP to level ${p.level + 1}`), h('span', { class: 'xp' }, `${p.totalXp} XP`)),
-    p.heldXp > 0 ? h('p', { class: 'small warn' }, `${p.heldXp} XP is waiting on your review below.`) : null,
-    view.season ? h('p', { class: 'small muted' }, `${view.season.name} · ends ${dayLabel(new Date(view.season.endsAt).toISOString().slice(0, 10), 'long')}`) : null,
+    { class: 'card hero', attrs: { 'data-testid': 'level' } },
+    emblem(p, from === null ? {} : { from }),
+    h(
+      'div',
+      { class: 'hero-info' },
+      h('h1', {}, view.account.displayName),
+      h('div', { class: 'rank' }, `✦ ${rank.name}`, rank.next ? h('span', { class: 'next-rank' }, `· ${rank.next.name} at level ${rank.next.level}`) : null),
+      h('div', { class: 'row between small' }, h('span', { class: 'muted' }, `${p.xpIntoLevel} / ${p.xpForNextLevel} XP to level ${p.level + 1}`), h('span', { class: 'xp' }, `${p.totalXp} XP`)),
+      meter(p.xpIntoLevel / Math.max(1, p.xpForNextLevel), 'Progress to next level'),
+      p.heldXp > 0 ? h('p', { class: 'small warn' }, `${p.heldXp} XP is waiting on your review below.`) : null,
+      view.season ? h('p', { class: 'small muted', style: { margin: '4px 0 0' } }, `🛰 ${view.season.name} · ${daysLeft === 1 ? '1 day' : `${daysLeft} days`} left`) : null,
+      h('div', { class: 'stats' }, stat('Today', duration(todayMinutes)), stat('Quests done', `${questsDone} / ${view.quests.length}`), stat('Badges', `${earned} / ${view.badges.length}`)),
+    ),
   );
 }
 
 function prioritiesCard(view: HomeView, refresh: () => Promise<void>): HTMLElement {
   const items = view.priorities.map((p) => {
-    const box = h('input', { attrs: { type: 'checkbox', 'aria-label': `Done: ${p.text}` } });
+    const box = h('input', { class: 'planet', attrs: { type: 'checkbox', 'aria-label': `Done: ${p.text}` } });
     box.checked = p.done;
     box.addEventListener('change', () => void run(async () => {
+      if (box.checked) play.tick();
       await api.setPriority(p.id, box.checked);
       await refresh();
     }));
@@ -308,7 +305,7 @@ function prioritiesCard(view: HomeView, refresh: () => Promise<void>): HTMLEleme
       'li',
       {},
       box,
-      h('span', { class: 'grow', style: p.done ? { 'text-decoration': 'line-through', color: 'var(--muted)' } : {} }, p.text),
+      h('span', { class: `grow${p.done ? ' done-text' : ''}` }, p.text),
       p.skill ? h('span', { class: 'pill' }, cap(p.skill)) : null,
       button('Remove', async () => {
         await api.deletePriority(p.id);
@@ -321,7 +318,7 @@ function prioritiesCard(view: HomeView, refresh: () => Promise<void>): HTMLEleme
     const text = h('input', { class: 'grow', attrs: { maxlength: '120', placeholder: 'What matters today?', 'aria-label': 'New priority' } });
     const skills = view.progress.domains.flatMap((d) => d.skills.map((s) => [s.skill, cap(s.skill)] as [string, string]));
     const skill = select([['', 'No skill'], ...skills], '', 'Skill');
-    form = h('form', { class: 'row', style: { 'margin-top': '10px' } }, text, skill, h('button', { attrs: { type: 'submit' } }, 'Add'));
+    form = h('form', { class: 'row priority-form', style: { 'margin-top': '10px' } }, text, skill, h('button', { attrs: { type: 'submit' } }, 'Add'));
     form.addEventListener('submit', (event) => {
       event.preventDefault();
       if (!text.value.trim()) return;
@@ -331,11 +328,12 @@ function prioritiesCard(view: HomeView, refresh: () => Promise<void>): HTMLEleme
       });
     });
   }
+  const done = view.priorities.filter((p) => p.done).length;
   return h(
     'section',
     { class: 'card', attrs: { 'data-testid': 'priorities' } },
-    h('h2', {}, `${dayLabel(view.today.dateKey, 'long')}`),
-    h('p', { class: 'sub' }, 'Pick up to three priorities. Fewer is fine.'),
+    h('div', { class: 'row between' }, h('h2', {}, h('span', { class: 'icon', attrs: { 'aria-hidden': 'true' } }, '🪐'), dayLabel(view.today.dateKey, 'long')), view.priorities.length ? h('span', { class: `pill${done === view.priorities.length ? ' good' : ''}` }, `${done} / ${view.priorities.length} done`) : null),
+    h('p', { class: 'sub' }, 'Today’s orbit: up to three priorities. Fewer is fine.'),
     items.length ? h('ul', { class: 'list' }, ...items) : null,
     form,
   );
@@ -343,16 +341,16 @@ function prioritiesCard(view: HomeView, refresh: () => Promise<void>): HTMLEleme
 
 function questCard(quest: QuestView, refresh: () => Promise<void>): HTMLElement {
   const status: Record<QuestView['status'], [string, string]> = {
-    active: ['Open', ''],
-    complete: [quest.provisional ? 'Complete · self-reported' : 'Complete', 'good'],
+    active: ['In progress', ''],
+    complete: [quest.provisional ? '✓ Complete · self-reported' : '✓ Complete', 'good'],
     skipped: ['Skipped', ''],
     ended: ['Ended', ''],
   };
   const [label, tone] = status[quest.status];
   return h(
     'div',
-    { class: 'quest', attrs: { 'data-quest': quest.template } },
-    h('div', { class: 'row between' }, h('span', { class: 'title' }, quest.title), h('span', { class: `pill ${tone}` }, label)),
+    { class: `mission${quest.status === 'complete' ? ' done' : ''}`, attrs: { 'data-quest': quest.template } },
+    h('div', { class: 'row between' }, h('span', { class: 'title' }, h('span', { class: 'badge-icon', attrs: { 'aria-hidden': 'true' } }, QUEST_ICON[quest.template] ?? '🚀'), quest.title), h('span', { class: `pill ${tone}` }, label)),
     h('span', { class: 'small muted' }, quest.intent),
     h(
       'div',
@@ -364,7 +362,8 @@ function questCard(quest: QuestView, refresh: () => Promise<void>): HTMLElement 
     h(
       'div',
       { class: 'row between small' },
-      h('span', { class: 'muted' }, `+${quest.reward.xp} ${cap(quest.reward.skill)} XP${quest.minEvidence === 'self_reported' ? ' · manual entries count' : ''}`),
+      h('span', { class: 'pill glow' }, `+${quest.reward.xp} ${cap(quest.reward.skill)} XP`),
+      quest.minEvidence === 'self_reported' ? h('span', { class: 'muted grow' }, 'Manual entries count') : h('span', { class: 'grow' }),
       quest.status === 'active'
         ? button('Skip', async () => {
             await api.skipQuest(quest.id);
@@ -379,7 +378,7 @@ function questsCard(view: HomeView, refresh: () => Promise<void>): HTMLElement {
   return h(
     'section',
     { class: 'card', attrs: { 'data-testid': 'quests' } },
-    h('h2', {}, 'Quests'),
+    h('h2', {}, h('span', { class: 'icon', attrs: { 'aria-hidden': 'true' } }, '🚀'), 'Quests'),
     h('p', { class: 'sub' }, 'Today’s and this week’s. Skipping is always fine.'),
     ...view.quests.map((quest) => questCard(quest, refresh)),
   );
@@ -408,7 +407,7 @@ function reviewCard(view: HomeView, refresh: () => Promise<void>): HTMLElement |
   return h(
     'section',
     { class: 'card', attrs: { 'data-testid': 'review' } },
-    h('h2', {}, 'Needs your review'),
+    h('h2', {}, h('span', { class: 'icon', attrs: { 'aria-hidden': 'true' } }, '🔭'), 'Needs your review'),
     h('p', { class: 'sub' }, 'These are held, not counted, until you look. Nothing is assumed to be cheating.'),
     h(
       'ul',
@@ -468,8 +467,8 @@ function activityCard(view: HomeView, refresh: () => Promise<void>): HTMLElement
   return h(
     'section',
     { class: 'card', attrs: { 'data-testid': 'activity' } },
-    h('h2', {}, 'Today’s activity'),
-    h('p', { class: 'sub' }, 'Open an entry to see exactly how its XP was worked out, or to correct it.'),
+    h('h2', {}, h('span', { class: 'icon', attrs: { 'aria-hidden': 'true' } }, '🛰'), 'Flight log'),
+    h('p', { class: 'sub' }, 'Today’s activity. Open an entry to see exactly how its XP was worked out, or to correct it.'),
     items.length ? h('ul', { class: 'list' }, ...items) : h('p', { class: 'empty' }, 'Nothing yet today. Focus sessions from LifeOS Companion appear here a few minutes after they end.'),
   );
 }
@@ -488,7 +487,7 @@ function logCard(refresh: () => Promise<void>): HTMLElement {
     h('label', {}, 'Started today at', time),
     h('label', {}, 'Minutes', minutes),
     h('label', {}, 'Distance (km)', km),
-    h('button', { attrs: { type: 'submit' } }, 'Log it'),
+    h('button', { class: 'primary', attrs: { type: 'submit' } }, 'Log it'),
   );
   form.addEventListener('submit', (event) => {
     event.preventDefault();
@@ -510,17 +509,16 @@ function logCard(refresh: () => Promise<void>): HTMLElement {
   return h(
     'section',
     { class: 'card' },
-    h('h2', {}, 'Log something by hand'),
+    h('h2', {}, h('span', { class: 'icon', attrs: { 'aria-hidden': 'true' } }, '✍️'), 'Log something by hand'),
     h('p', { class: 'sub' }, 'For workouts, walks and anything away from the computer. Manual entries count for your own progress, not for rankings.'),
     form,
   );
 }
 
 function skillsCard(view: HomeView): HTMLElement {
-  return h(
-    'section',
-    { class: 'card', attrs: { 'data-testid': 'skills' } },
-    h('h2', {}, 'Skills'),
+  const list = h(
+    'div',
+    { attrs: { hidden: '' } },
     ...view.progress.domains.map((domain) =>
       h(
         'div',
@@ -532,13 +530,58 @@ function skillsCard(view: HomeView): HTMLElement {
       ),
     ),
   );
+  const sky = constellation(view.progress, { show: showTip, hide: hideTip });
+  const toggle = h('button', { class: 'link small', attrs: { type: 'button', 'aria-expanded': 'false' } }, 'Show as list');
+  toggle.addEventListener('click', () => {
+    const showList = list.hidden;
+    list.hidden = !showList;
+    sky.style.display = showList ? 'none' : '';
+    toggle.setAttribute('aria-expanded', String(showList));
+    toggle.textContent = showList ? 'Show the sky' : 'Show as list';
+  });
+  const lit = view.progress.domains.flatMap((d) => d.skills).filter((s) => s.xp > 0).length;
+  const total = view.progress.domains.flatMap((d) => d.skills).length;
+  return h(
+    'section',
+    { class: 'card', attrs: { 'data-testid': 'skills' } },
+    h('div', { class: 'row between' }, h('h2', {}, h('span', { class: 'icon', attrs: { 'aria-hidden': 'true' } }, '✨'), 'Skills'), toggle),
+    h('p', { class: 'sub' }, `${lit} of ${total} stars lit. Each skill shines brighter as it levels up.`),
+    sky,
+    list,
+  );
+}
+
+function medal(badge: BadgeView, compact = false): HTMLElement {
+  const label = `${badge.name}: ${badge.earned ? 'earned' : `${badge.current} of ${badge.target}`}. ${badge.description}`;
+  return h(
+    'div',
+    { class: `medal${badge.earned ? ' earned' : ''}`, attrs: compact ? { role: 'img', 'aria-label': label, title: label } : { 'data-badge': badge.id } },
+    h('div', { class: 'disc', attrs: { 'aria-hidden': 'true' } }, BADGE_ICON[badge.id] ?? '🏅'),
+    compact ? null : h('div', { class: 'name' }, badge.name),
+    compact ? null : h('div', { class: 'desc' }, badge.description),
+    compact || badge.earned ? null : meter(badge.current / badge.target, `${badge.name} progress`),
+    compact ? null : h('div', { class: 'small muted' }, badge.earned ? 'Earned' : `${badge.current} / ${badge.target}`),
+  );
+}
+
+function badgesCard(badges: readonly BadgeView[]): HTMLElement {
+  const earned = badges.filter((b) => b.earned).length;
+  // Earned first, then the closest to being earned.
+  const shown = [...badges].sort((a, b) => Number(b.earned) - Number(a.earned) || b.current / b.target - a.current / a.target).slice(0, 6);
+  return h(
+    'section',
+    { class: 'card', attrs: { 'data-testid': 'badges' } },
+    h('div', { class: 'row between' }, h('h2', {}, h('span', { class: 'icon', attrs: { 'aria-hidden': 'true' } }, '🏅'), 'Badges'), h('a', { class: 'small', attrs: { href: '#/badges' } }, `All ${badges.length} ›`)),
+    h('p', { class: 'sub' }, `${earned} earned. Every badge is a real milestone.`),
+    h('div', { class: 'badges compact' }, ...shown.map((b) => medal(b, true))),
+  );
 }
 
 function awardsCard(view: HomeView): HTMLElement {
   return h(
     'section',
     { class: 'card' },
-    h('h2', {}, 'Recent XP'),
+    h('h2', {}, h('span', { class: 'icon', attrs: { 'aria-hidden': 'true' } }, '⚡'), 'Recent XP'),
     view.recentAwards.length
       ? h(
           'ul',
@@ -554,6 +597,26 @@ function awardsCard(view: HomeView): HTMLElement {
         )
       : h('p', { class: 'empty' }, 'XP shows up here, always with its reasons.'),
   );
+}
+
+// --- badges --------------------------------------------------------------------------------
+
+async function showBadges(): Promise<void> {
+  const view = await api.home();
+  account = view.account;
+  renderHeader(true);
+  const changes = takeChanges(view);
+  const earned = view.badges.filter((b) => b.earned).length;
+  main.replaceChildren(
+    h(
+      'section',
+      { class: 'card', attrs: { 'data-testid': 'badge-list' } },
+      h('h2', {}, h('span', { class: 'icon', attrs: { 'aria-hidden': 'true' } }, '🏅'), `Badges · ${earned} of ${view.badges.length}`),
+      h('p', { class: 'sub' }, 'Earned from what really happened. If evidence is corrected or deleted, its badge follows.'),
+      h('div', { class: 'badges' }, ...view.badges.map((b) => medal(b))),
+    ),
+  );
+  if (changes.moments.length) window.setTimeout(() => celebrate(changes.moments), 200);
 }
 
 // --- week -----------------------------------------------------------------------------------

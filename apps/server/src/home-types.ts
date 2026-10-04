@@ -77,6 +77,16 @@ export interface PriorityView {
   readonly done: boolean;
 }
 
+export interface BadgeView {
+  readonly id: string;
+  readonly name: string;
+  readonly description: string;
+  readonly earned: boolean;
+  /** Progress toward the badge, capped at the target. */
+  readonly current: number;
+  readonly target: number;
+}
+
 export interface HomeView {
   readonly account: { readonly displayName: string; readonly timeZone: string };
   readonly today: { readonly dateKey: string; readonly window: Window };
@@ -95,6 +105,7 @@ export interface HomeView {
     readonly reversalReason: string | null;
   }[];
   readonly season: { readonly id: string; readonly name: string; readonly endsAt: number; readonly leaderboardOptIn: boolean } | null;
+  readonly badges: readonly BadgeView[];
 }
 
 export interface RecapView {

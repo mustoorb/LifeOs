@@ -58,6 +58,7 @@ describe.skipIf(!TEST_DATABASE_URL)('ECLIPSE home', () => {
 
   const home = async (token: string) => (await h.json('GET', '/v1/home', { token })).body;
   const quest = (view: any, template: string) => view.quests.find((q: any) => q.template === template);
+  const badge = (view: any, id: string) => view.badges.find((b: any) => b.id === id);
 
   it('turns an uploaded focus session into explained XP and a completed daily quest', async () => {
     const token = await newMember('focus@example.com');
@@ -86,6 +87,11 @@ describe.skipIf(!TEST_DATABASE_URL)('ECLIPSE home', () => {
     expect(view.progress.domains[0]).toMatchObject({ domain: 'mind', skills: expect.arrayContaining([expect.objectContaining({ skill: 'focus', xp: 30 })]) });
     expect(view.recentAwards[0]).toMatchObject({ kind: 'quest_completion', xp: 5, explanation: ['+5 quest bonus: Focus block', '1 qualifying activity'] });
 
+    expect(badge(view, 'first-light')).toMatchObject({ earned: true, current: 1, target: 1 });
+    expect(badge(view, 'deep-focus')).toMatchObject({ earned: true });
+    expect(badge(view, 'long-haul')).toMatchObject({ earned: false, current: 50, target: 600 });
+    expect(badge(view, 'in-motion')).toMatchObject({ earned: false, current: 0 });
+
     // Refreshing again changes nothing.
     expect((await home(token)).progress.totalXp).toBe(30);
   });
@@ -106,6 +112,10 @@ describe.skipIf(!TEST_DATABASE_URL)('ECLIPSE home', () => {
     view = await home(token);
     expect(view.progress.totalXp).toBe(0);
     expect(quest(view, 'daily-focus').status).toBe('active');
+    // Badges follow the evidence: discarding it takes them away, and the correction itself earns one.
+    expect(badge(view, 'first-light').earned).toBe(false);
+    expect(badge(view, 'deep-focus').earned).toBe(false);
+    expect(badge(view, 'true-north').earned).toBe(true);
     expect(view.recentAwards.filter((a: any) => a.status === 'reversed').map((a: any) => a.reversalReason)).toEqual(
       expect.arrayContaining(['activity discarded', 'quest no longer complete']),
     );
@@ -133,6 +143,9 @@ describe.skipIf(!TEST_DATABASE_URL)('ECLIPSE home', () => {
     });
     expect(quest(view, 'weekly-movement')).toMatchObject({ status: 'complete', provisional: true, criteria: [{ unit: 'minutes', current: 150, required: 150 }, { unit: 'days', current: 3, required: 3 }] });
     expect(quest(view, 'weekly-recovery').status).toBe('complete');
+    expect(badge(view, 'in-motion')).toMatchObject({ earned: false, current: 5, target: 10 });
+    expect(badge(view, 'open-sky')).toMatchObject({ current: 2 });
+    expect(badge(view, 'mission-control')).toMatchObject({ current: 2 });
 
     expect((await log({ type: 'run', start: h.clock.now + HOUR, end: h.clock.now + 2 * HOUR })).body.error.code).toBe('invalid_log_future_interval');
     expect((await log({ type: 'digital_session', start: h.clock.now - HOUR, end: h.clock.now })).status).toBe(422);

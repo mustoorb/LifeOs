@@ -29,7 +29,7 @@ export interface Harness {
   close(): Promise<void>;
 }
 
-export async function createHarness(options: { webDir?: string } = {}): Promise<Harness> {
+export async function createHarness(options: { webDir?: string; trustProxy?: boolean } = {}): Promise<Harness> {
   const name = `lifeos_test_${randomBytes(6).toString('hex')}`;
   const adminPool = new pg.Pool({ connectionString: TEST_DATABASE_URL, max: 1 });
   await adminPool.query(`CREATE DATABASE ${name}`);
@@ -42,7 +42,7 @@ export async function createHarness(options: { webDir?: string } = {}): Promise<
   const now = () => clock.now;
   const mailer = new MemoryMailer();
   const services = createServices({ db, mailer, secret: 'test-secret-that-is-at-least-32-characters', now });
-  const app = createApp(services, { trustProxy: false, now, ...(options.webDir ? { webDir: options.webDir } : {}) });
+  const app = createApp(services, { trustProxy: options.trustProxy ?? false, now, ...(options.webDir ? { webDir: options.webDir } : {}) });
 
   const request: Harness['request'] = (method, path, options = {}) => {
     const headers: Record<string, string> = { ...options.headers };

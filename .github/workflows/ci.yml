@@ -61,6 +61,12 @@ jobs:
           head -n 1 helper.out
           head -n 1 helper.out | python3 -c 'import json, sys; d = json.loads(sys.stdin.readline()); assert set(d) == {"bundleId", "name"}, d'
       - run: npm run build
+      - name: The Mac hosting script runs on the bash and plutil that ship with macOS
+        run: |
+          /bin/bash -n deploy/mac.sh
+          /bin/bash -n deploy/lifeos
+          printf '{"BackendState":"Running","Self":{"DNSName":"mac.tail1.ts.net."}}' | plutil -extract Self.DNSName raw -o - - | grep -qx 'mac.tail1.ts.net.'
+          /bin/bash -c "$(sed -n '/^urlencode()/,/^}/p' deploy/mac.sh); [[ \$(urlencode 'me+x@gmail.com') == me%2Bx%40gmail.com ]]"
       - name: Package an unsigned app bundle
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: 'false'
@@ -118,7 +124,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Lint the deploy scripts
-        run: shellcheck -x deploy/setup.sh deploy/lifeos
+        run: shellcheck -x deploy/setup.sh deploy/mac.sh deploy/lifeos
       - name: Start the stack with a local SMTP sink
         run: |
           cat > deploy-ci.yml <<'YML'

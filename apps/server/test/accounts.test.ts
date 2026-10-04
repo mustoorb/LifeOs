@@ -198,3 +198,20 @@ describe.skipIf(!TEST_DATABASE_URL)('accounts and sign-in', () => {
     expect((await signUp(h, 'leaving@example.com', await issueCode(h))).status).toBe(201);
   });
 });
+
+describe.skipIf(!TEST_DATABASE_URL)('behind a trusted proxy', () => {
+  let h: Harness;
+  beforeAll(async () => {
+    h = await createHarness({ trustProxy: true });
+  });
+  afterAll(() => h?.close());
+
+  it('rate-limits by the address the proxy appended, so a forged X-Forwarded-For does not help', async () => {
+    const start = (i: number, forwarded: string) =>
+      h.request('POST', '/v1/auth/start', { body: { email: `ip${i}@example.com` }, headers: { 'x-forwarded-for': forwarded } });
+    let i = 0;
+    for (; i < 20; i++) expect((await start(i, `10.0.0.${i}, 203.0.113.7`)).status).toBe(202);
+    expect((await start(i++, '10.0.0.99, 203.0.113.7')).status).toBe(429);
+    expect((await start(i++, '203.0.113.8')).status).toBe(202);
+  });
+});
